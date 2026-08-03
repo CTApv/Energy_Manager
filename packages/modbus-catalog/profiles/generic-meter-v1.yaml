@@ -1,0 +1,91 @@
+id: generic-meter-v1
+manufacturer: Generic
+model: Demo Meter
+category: multimeter
+version: 1.0.0
+protocols:
+  - modbus_tcp
+  - modbus_rtu
+address_base: 0
+defaults:
+  polling_interval_seconds: 5
+  unit_id: 1
+points:
+  - key: electrical.active_power.total
+    label: Potenza attiva totale
+    function_code: 3
+    address: 100
+    register_count: 2
+    data_type: float32
+    byte_order: big
+    word_order: big
+    scale: 1
+    offset: 0
+    unit: kW
+    access: read
+    polling_group: fast
+  - key: electrical.energy.import_total
+    label: Energia importata
+    function_code: 3
+    address: 110
+    register_count: 2
+    data_type: uint32
+    byte_order: big
+    word_order: big
+    scale: 0.01
+    offset: 0
+    unit: kWh
+    access: read
+    polling_group: normal
+  - key: electrical.voltage.l1n
+    label: Tensione L1-N
+    function_code: 3
+    address: 120
+    register_count: 2
+    data_type: float32
+    byte_order: big
+    word_order: big
+    scale: 1
+    offset: 0
+    unit: V
+    access: read
+    polling_group: normal
+  - key: electrical.current.l1
+    label: Corrente L1
+    function_code: 3
+    address: 122
+    register_count: 2
+    data_type: float32
+    byte_order: big
+    word_order: big
+    scale: 1
+    offset: 0
+    unit: A
+    access: read
+    polling_group: normal
+  - key: electrical.power_factor.total
+    label: Fattore di potenza
+    function_code: 3
+    address: 124
+    register_count: 2
+    data_type: float32
+    byte_order: big
+    word_order: big
+    scale: 1
+    offset: 0
+    unit: ""
+    access: read
+    polling_group: normal
+  - key: electrical.frequency
+    label: Frequenza
+    function_code: 3
+    address: 126
+    register_count: 2
+    data_type: float32
+    byte_order: big
+    word_order: big
+    scale: 1
+    offset: 0
+    unit: Hz
+    access: read
+    polling_group: normal

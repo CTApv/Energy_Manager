@@ -1,0 +1,1090 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import secrets
+from collections import defaultdict, deque
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Annotated, Any
+
+import yaml
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from .auth import create_token, current_user, hash_password, require_roles, verify_password
+from .catalog import expand_catalog_document, next_copy_id, parse_profile, validate_profile
+from .config import get_settings
+from .db import Base, SessionLocal, engine, get_db
+from .decoder import decode_registers
+from .kpi import counter_delta, unattributed_energy
+from .models import (
+    AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
+    Connection, Device, DeviceProfile, Edge, EdgeActivation, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
+    RegisterDefinition, Site, SyncOutbox, TelemetrySample, Tenant, User, utcnow,
+)
+from .polling import poll_device, polling_loop
+from .seed import seed_database
+from .sync import sync_loop, sync_once
+from .tailscale import FakeTailscaleProvider, NetworkAgent, node_dict
+
+
+settings = get_settings()
+rate_buckets: dict[str, deque[float]] = defaultdict(deque)
+tailscale_provider = FakeTailscaleProvider()
+
+
+def as_dict(obj: Any) -> dict[str, Any]:
+    return {column.name: getattr(obj, column.name) for column in obj.__table__.columns}
+
+
+def webhook_signature_valid(body: bytes, signature: str, secret: str) -> bool:
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def tenant_scope_allowed(role: str, user_tenant_id: str | None, target_tenant_id: str) -> bool:
+    return role in {"platform_admin", "technician"} or (user_tenant_id is not None and user_tenant_id == target_tenant_id)
+
+
+def batch_already_ingested(db: Session, batch_id: str) -> bool:
+    return db.get(IngestedBatch, batch_id) is not None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        seed_database(db, settings)
+    stop = asyncio.Event()
+    tasks = []
+    if settings.mode == "edge" and settings.polling_enabled:
+        tasks.append(asyncio.create_task(polling_loop(stop)))
+    if settings.mode == "edge" and settings.sync_enabled:
+        tasks.append(asyncio.create_task(sync_loop(stop)))
+    yield
+    stop.set()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+app = FastAPI(title=f"Energy Manager {settings.mode}", version="0.1.0", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Webhook-Signature"])
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def sensitive_rate_limit(request: Request, limit: int = 12, window_seconds: int = 60) -> None:
+    import time
+    key = request.client.host if request.client else "unknown"
+    now = time.monotonic(); bucket = rate_buckets[key]
+    while bucket and bucket[0] < now - window_seconds: bucket.popleft()
+    if len(bucket) >= limit: raise HTTPException(429, "Too many attempts")
+    bucket.append(now)
+
+
+class AssetInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    parent_id: str | None = None
+    category: str = "asset"
+    description: str = ""
+    sort_order: int = 0
+    active: bool = True
+
+
+class ConnectionInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    kind: str
+    config: dict[str, Any]
+
+
+class DeviceInput(BaseModel):
+    connection_id: str
+    profile_id: str
+    name: str = Field(min_length=1, max_length=160)
+    unit_id: int = Field(ge=0, le=247)
+
+
+class LocalSiteInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
+class BindingInput(BaseModel):
+    asset_id: str
+    device_id: str
+    measurement_key: str = Field(min_length=3, max_length=160)
+    role: str = Field(default="primary", pattern="^(primary|process|secondary)$")
+
+
+class AlarmRuleInput(BaseModel):
+    name: str = Field(min_length=3, max_length=160)
+    device_id: str | None = None
+    measurement_key: str = Field(min_length=3, max_length=160)
+    condition: str = Field(pattern="^(above|below|outside)$")
+    threshold: float | None = None
+    low: float | None = None
+    high: float | None = None
+    deadband: float = Field(default=0, ge=0)
+    severity: str = Field(default="warning", pattern="^(info|warning|high|critical)$")
+    notification_channels: list[str] = Field(default_factory=lambda: ["in_app"])
+    active: bool = True
+
+
+class UserCreateInput(BaseModel):
+    username: str = Field(min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9._-]+$")
+    password: str = Field(min_length=10, max_length=200)
+    role: str = Field(pattern="^(platform_admin|technician|customer_admin|operator|viewer)$")
+    active: bool = True
+
+
+class UserUpdateInput(BaseModel):
+    role: str = Field(pattern="^(platform_admin|technician|customer_admin|operator|viewer)$")
+    active: bool = True
+    password: str | None = Field(default=None, min_length=10, max_length=200)
+
+
+class KpiDefinitionInput(BaseModel):
+    name: str = Field(min_length=3, max_length=160)
+    kind: str = Field(pattern="^(latest|sum|ratio)$")
+    config: dict[str, Any]
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok", "mode": settings.mode, "version": "0.1.0", "time": utcnow()}
+
+
+def compliance_readiness(db: Session) -> dict[str, Any]:
+    device_count = db.scalar(select(func.count()).select_from(Device)) or 0
+    connection_count = db.scalar(select(func.count()).select_from(Connection)) or 0
+    binding_count = db.scalar(select(func.count()).select_from(MeasurementBinding)) or 0
+    sample_count = db.scalar(select(func.count()).select_from(TelemetrySample)) or 0
+    audit_count = db.scalar(select(func.count()).select_from(AuditEvent)) or 0
+    rule_count = db.scalar(select(func.count()).select_from(AlarmRule).where(AlarmRule.active.is_(True))) or 0
+    user_count = db.scalar(select(func.count()).select_from(User).where(User.active.is_(True))) or 0
+    oldest_sample = db.scalar(select(func.min(TelemetrySample.sample_at)))
+    newest_sample = db.scalar(select(func.max(TelemetrySample.sample_at)))
+    controls = [
+        {"id": "t40_asset_map", "framework": "Transizione 4.0", "area": "Interconnessione", "title": "Identificazione e collocazione dei beni", "status": "ready" if device_count and binding_count else "action", "evidence": f"{device_count} dispositivi, {binding_count} associazioni all’albero", "action": "Associare ogni bene al processo e conservare matricola, schema e relazione tecnica."},
+        {"id": "t40_factory_exchange", "framework": "Transizione 4.0", "area": "Integrazione", "title": "Scambio dati con sistemi di fabbrica", "status": "partial", "evidence": "API e sincronizzazione Edge disponibili; acquisizione Modbus intenzionalmente read-only", "action": "Documentare il flusso con MES/ERP/SCADA e verificare i requisiti di interconnessione del bene agevolato."},
+        {"id": "t50_monitoring", "framework": "Transizione 5.0", "area": "Energy dashboarding", "title": "Monitoraggio continuo dei consumi", "status": "ready" if sample_count else "action", "evidence": f"{sample_count} campioni normalizzati; alberatura monte/valle e bilancio 24h", "action": "Definire periodo di osservazione, confini di processo e frequenza di misura nel piano di misura."},
+        {"id": "t50_baseline", "framework": "Transizione 5.0", "area": "Risparmio energetico", "title": "Baseline ed EnPI ex ante/ex post", "status": "partial", "evidence": "Delta, KPI e storico disponibili; baseline certificata non ancora congelata", "action": "Aggiungere baseline versionata, variabili di aggiustamento e firma del tecnico abilitato."},
+        {"id": "t50_certification", "framework": "Transizione 5.0", "area": "Procedura GSE", "title": "Certificazioni e fascicolo agevolativo", "status": "external", "evidence": "Il software può esportare evidenze, non sostituisce certificazione tecnica e contabile", "action": "Coinvolgere certificatore/perito e commercialista secondo la misura applicabile alla data dell’investimento."},
+        {"id": "iso50001_enpi", "framework": "ISO 50001 / 50006", "area": "Prestazione energetica", "title": "EnPI, confini e miglioramento", "status": "partial", "evidence": "KPI, gerarchia energetica, quota non attribuita e storico presenti", "action": "Formalizzare baseline, obiettivi, normalizzazione e riesame periodico."},
+        {"id": "meter_traceability", "framework": "MID / metrologia", "area": "Misura", "title": "Tracciabilità metrologica", "status": "action", "evidence": "Modello e profilo registri presenti; certificato e scadenza taratura non archiviati", "action": "Registrare matricola, classe, certificato MID/taratura, data verifica e catena di misura."},
+        {"id": "cyber_access", "framework": "IEC 62443 / NIS2", "area": "Accesso e audit", "title": "Controllo accessi e tracciabilità", "status": "ready" if user_count and audit_count else "partial", "evidence": f"RBAC attivo, {user_count} utenti, {audit_count} eventi audit", "action": "Integrare MFA/SSO, revisione periodica degli accessi e conservazione audit definita."},
+        {"id": "cra_lifecycle", "framework": "Cyber Resilience Act", "area": "Secure lifecycle", "title": "Vulnerabilità, SBOM e aggiornamenti firmati", "status": "action", "evidence": "Hardening HTTP presente; processo prodotto CRA non ancora documentato", "action": "Introdurre SBOM, vulnerability intake, disclosure, patch SLA, firma e rollback degli aggiornamenti."},
+        {"id": "data_act", "framework": "EU Data Act", "area": "Portabilità dati", "title": "Accesso ed esportazione dei dati industriali", "status": "partial", "evidence": "API ed export catalogo disponibili", "action": "Aggiungere export self-service completo, policy di portabilità, contratti e metadati machine-readable."},
+        {"id": "backup_continuity", "framework": "IEC 62443 / continuità", "area": "Resilienza", "title": "Backup, ripristino e continuità Edge", "status": "action", "evidence": "Buffer offline e retry presenti; backup verificato non configurato", "action": "Automatizzare backup cifrato, test di restore, retention e procedure disaster recovery."},
+        {"id": "alarm_management", "framework": "ISA-18.2", "area": "Allarmi", "title": "Allarmi prioritizzati e azionabili", "status": "ready" if rule_count else "partial", "evidence": f"{rule_count} regole attive con priorità, isteresi, acknowledge e audit", "action": "Approvare filosofia allarmi, KPI di carico e revisione periodica delle soglie."},
+    ]
+    points = {"ready": 100, "partial": 55, "external": 25, "action": 0}
+    score = round(sum(points[item["status"]] for item in controls) / len(controls))
+    return {
+        "generated_at": utcnow(), "assessment": "readiness_not_certification", "score": score,
+        "summary": {"ready": sum(item["status"] == "ready" for item in controls), "partial": sum(item["status"] == "partial" for item in controls), "action": sum(item["status"] in {"action", "external"} for item in controls)},
+        "system": {"devices": device_count, "connections": connection_count, "bindings": binding_count, "samples": sample_count, "audit_events": audit_count, "active_alarm_rules": rule_count, "oldest_sample_at": oldest_sample, "newest_sample_at": newest_sample},
+        "controls": controls,
+        "regulatory_horizon": [
+            {"date": "2025-09-12", "title": "EU Data Act applicabile", "impact": "Accesso, uso e portabilità dei dati dei prodotti connessi."},
+            {"date": "2026-09-11", "title": "CRA: reporting vulnerabilità", "impact": "Preparare incident e vulnerability reporting per prodotti digitali."},
+            {"date": "2027-01-20", "title": "Regolamento Macchine", "impact": "Valutare applicabilità a integrazioni che incidono sulle funzioni della macchina."},
+            {"date": "2027-12-11", "title": "Cyber Resilience Act pienamente applicabile", "impact": "Secure-by-design, gestione vulnerabilità e documentazione di prodotto."},
+        ],
+    }
+
+
+@app.get("/api/compliance/readiness")
+def compliance_status(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return compliance_readiness(db)
+
+
+@app.get("/api/compliance/evidence-export")
+def compliance_evidence(user: User = Depends(current_user), db: Session = Depends(get_db)) -> JSONResponse:
+    snapshot = compliance_readiness(db)
+    canonical = json.dumps(snapshot, default=str, sort_keys=True, separators=(",", ":"))
+    snapshot["integrity"] = {"algorithm": "SHA-256", "digest": hashlib.sha256(canonical.encode()).hexdigest()}
+    return JSONResponse(content=json.loads(json.dumps(snapshot, default=str)), headers={"Content-Disposition": 'attachment; filename="energy-manager-evidence.json"'})
+
+
+@app.post("/api/auth/token")
+def login(request: Request, form: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]) -> dict:
+    sensitive_rate_limit(request)
+    user = db.scalar(select(User).where(User.username == form.username, User.active.is_(True)))
+    if not user or not verify_password(form.password, user.password_hash):
+        raise HTTPException(401, "Invalid credentials")
+    return {"access_token": create_token(user), "token_type": "bearer", "user": {"username": user.username, "role": user.role}}
+
+
+@app.get("/api/me")
+def me(user: Annotated[User, Depends(current_user)]) -> dict:
+    return {"id": user.id, "username": user.username, "role": user.role, "tenant_id": user.tenant_id}
+
+
+@app.get("/api/dashboard")
+def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Session, Depends(get_db)], device_id: str | None = None) -> dict:
+    if settings.mode == "control-room":
+        return {
+            "tenants": db.scalar(select(func.count()).select_from(Tenant)) or 0,
+            "sites": db.scalar(select(func.count()).select_from(Site)) or 0,
+            "edges": db.scalar(select(func.count()).select_from(Edge)) or 0,
+            "online_edges": db.scalar(select(func.count()).select_from(Edge).where(Edge.status == "online")) or 0,
+            "samples": db.scalar(select(func.count()).select_from(TelemetrySample)) or 0,
+        }
+    primary_binding = db.scalar(
+        select(MeasurementBinding)
+        .where(
+            MeasurementBinding.role == "primary",
+            MeasurementBinding.measurement_key == "electrical.energy.import_total",
+        )
+        .order_by(MeasurementBinding.created_at)
+        .limit(1)
+    )
+    main_device = db.get(Device, primary_binding.device_id) if primary_binding else None
+    if not main_device:
+        main_device = db.scalar(select(Device).order_by(Device.unit_id).limit(1))
+    if device_id:
+        selected_device = db.get(Device, device_id)
+        if not selected_device:
+            raise HTTPException(404, "Device not found")
+        main_device = selected_device
+    latest_query = select(TelemetrySample).order_by(TelemetrySample.sample_at.desc()).limit(1000)
+    if main_device:
+        latest_query = latest_query.where(TelemetrySample.device_id == main_device.id)
+    latest = list(db.scalars(latest_query))
+    by_key: dict[str, TelemetrySample] = {}
+    for sample in latest:
+        by_key.setdefault(sample.measurement_key, sample)
+    devices = list(db.scalars(select(Device)))
+    open_alarms = db.scalar(select(func.count()).select_from(AlarmEvent).where(AlarmEvent.status.in_(["open", "acknowledged"]))) or 0
+    pending = db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0
+    power = by_key.get("electrical.active_power.total")
+    energy = by_key.get("electrical.energy.import_total")
+    profile = db.get(DeviceProfile, main_device.profile_id) if main_device else None
+    definition = profile.definition if profile else {}
+    site = db.scalar(select(LocalSite).limit(1))
+    primary_meter = None
+    if main_device:
+        primary_meter = {
+            "id": main_device.id,
+            "name": main_device.name,
+            "manufacturer": definition.get("manufacturer", ""),
+            "model": definition.get("model", main_device.profile_id),
+            "category": definition.get("category", "multimeter"),
+            "status": main_device.status,
+            "last_valid_poll_at": main_device.last_valid_poll_at,
+            "cycle_duration_ms": main_device.cycle_duration_ms,
+        }
+    point_definitions = definition.get("points", []) + definition.get("derived_points", [])
+    point_meta = {point["key"]: point for point in point_definitions}
+    measurements = [{
+        "key": key,
+        "label": point_meta.get(key, {}).get("label", key),
+        "group": point_meta.get(key, {}).get("group", "Misure"),
+        "value": sample.value,
+        "unit": sample.unit,
+        "quality": sample.quality,
+        "sample_at": sample.sample_at,
+    } for key, sample in by_key.items()]
+    device_options = []
+    for device in devices:
+        device_profile = db.get(DeviceProfile, device.profile_id)
+        device_definition = device_profile.definition if device_profile else {}
+        device_options.append({"id": device.id, "name": device.name, "manufacturer": device_definition.get("manufacturer", ""), "model": device_definition.get("model", device.profile_id), "status": device.status, "last_valid_poll_at": device.last_valid_poll_at})
+    series = list(db.scalars(select(TelemetrySample).where(TelemetrySample.device_id == main_device.id, TelemetrySample.measurement_key == "electrical.active_power.total").order_by(TelemetrySample.sample_at.desc()).limit(60))) if main_device else []
+    active_events = list(db.scalars(select(AlarmEvent).where(AlarmEvent.status.in_(["open", "acknowledged"])).order_by(AlarmEvent.opened_at.desc()).limit(8)))
+    rules_count = db.scalar(select(func.count()).select_from(AlarmRule).where(AlarmRule.active.is_(True))) or 0
+    return {
+        "site_name": site.name if site else None,
+        "primary_meter": primary_meter,
+        "devices": device_options,
+        "measurements": sorted(measurements, key=lambda item: (item["group"], item["label"])),
+        "active_alarms": [as_dict(event) for event in active_events],
+        "active_rules": rules_count,
+        "power_kw": power.value if power else None,
+        "energy_kwh": energy.value if energy else None,
+        "power_factor": by_key.get("electrical.power_factor.total").value if by_key.get("electrical.power_factor.total") else None,
+        "frequency_hz": by_key.get("electrical.frequency").value if by_key.get("electrical.frequency") else None,
+        "peak_kw": max((s.value for s in series if s.value is not None), default=None),
+        "devices_online": sum(d.status == "online" for d in devices),
+        "devices_total": len(devices),
+        "open_alarms": open_alarms,
+        "quality": "good" if latest else "missing",
+        "sync_pending": pending,
+        "tailscale": NetworkAgent(dry_run=True).diagnostics(),
+        "series": [{"time": s.sample_at, "value": s.value} for s in reversed(series)],
+        "updated_at": max((sample.sample_at for sample in by_key.values()), default=None),
+    }
+
+
+@app.get("/api/catalog")
+def catalog_list(user: Annotated[User, Depends(current_user)], db: Annotated[Session, Depends(get_db)]) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(CatalogProfile).order_by(CatalogProfile.manufacturer, CatalogProfile.model))]
+
+
+@app.get("/api/plant")
+def plant(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    site = db.scalar(select(LocalSite).limit(1))
+    bindings = db.execute(select(MeasurementBinding, AssetNode.name, Device.name).join(AssetNode, MeasurementBinding.asset_id == AssetNode.id).join(Device, MeasurementBinding.device_id == Device.id)).all()
+    return {
+        "site": as_dict(site) if site else None,
+        "connections": [as_dict(item) for item in db.scalars(select(Connection).order_by(Connection.name))],
+        "devices": [as_dict(item) for item in db.scalars(select(Device).order_by(Device.name))],
+        "assets": [as_dict(item) for item in db.scalars(select(AssetNode).order_by(AssetNode.sort_order, AssetNode.name))],
+        "bindings": [{**as_dict(binding), "asset_name": asset_name, "device_name": device_name} for binding, asset_name, device_name in bindings],
+        "profiles": [as_dict(item) for item in db.scalars(select(DeviceProfile).where(DeviceProfile.valid.is_(True)).order_by(DeviceProfile.id))],
+    }
+
+
+@app.get("/api/operations/tree")
+def operations_tree(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    """Return the energy hierarchy with authoritative upstream values and downstream allocation."""
+    assets = list(db.scalars(select(AssetNode).where(AssetNode.active.is_(True)).order_by(AssetNode.sort_order, AssetNode.name)))
+    devices = list(db.scalars(select(Device).where(Device.active.is_(True)).order_by(Device.name)))
+    bindings = list(db.scalars(select(MeasurementBinding).order_by(MeasurementBinding.created_at)))
+    device_by_id = {device.id: device for device in devices}
+    asset_devices: dict[str, list[str]] = defaultdict(list)
+    assigned: set[str] = set()
+    for binding in bindings:
+        if binding.device_id in device_by_id and binding.device_id not in asset_devices[binding.asset_id]:
+            asset_devices[binding.asset_id].append(binding.device_id)
+            assigned.add(binding.device_id)
+
+    def latest_value(device_id: str, key: str) -> tuple[float | None, datetime | None, str]:
+        sample = db.scalar(select(TelemetrySample).where(TelemetrySample.device_id == device_id, TelemetrySample.measurement_key == key).order_by(TelemetrySample.sample_at.desc()).limit(1))
+        if not sample: return (None, None, "missing")
+        return (sample.value if sample.quality == "good" else None, sample.sample_at, sample.quality)
+
+    device_stats: dict[str, dict[str, Any]] = {}
+    for device in devices:
+        profile = db.get(DeviceProfile, device.profile_id)
+        definition = profile.definition if profile else {}
+        power, power_at, power_quality = latest_value(device.id, "electrical.active_power.total")
+        energy, energy_at, energy_quality = latest_value(device.id, "electrical.energy.import_total")
+        period_start_sample = db.scalar(select(TelemetrySample).where(
+            TelemetrySample.device_id == device.id,
+            TelemetrySample.measurement_key == "electrical.energy.import_total",
+            TelemetrySample.sample_at >= utcnow() - timedelta(hours=24),
+            TelemetrySample.quality == "good",
+        ).order_by(TelemetrySample.sample_at).limit(1))
+        energy_24h = None
+        if energy is not None and period_start_sample and period_start_sample.value is not None:
+            energy_24h = counter_delta(float(period_start_sample.value), float(energy)).value
+        device_stats[device.id] = {
+            "id": device.id, "name": device.name, "manufacturer": definition.get("manufacturer", ""),
+            "model": definition.get("model", device.profile_id), "status": device.status,
+            "power_kw": power, "energy_kwh": energy, "sample_at": power_at or energy_at,
+            "energy_24h_kwh": energy_24h,
+            "quality": power_quality if power is not None else energy_quality,
+        }
+
+    children_by_parent: dict[str | None, list[AssetNode]] = defaultdict(list)
+    for asset in assets:
+        children_by_parent[asset.parent_id].append(asset)
+
+    def build(asset: AssetNode) -> dict[str, Any]:
+        children = [build(child) for child in children_by_parent.get(asset.id, [])]
+        meters = [device_stats[device_id] for device_id in asset_devices.get(asset.id, [])]
+        meter = meters[0] if meters else None
+        downstream_power = sum(child["effective_power_kw"] for child in children if child["effective_power_kw"] is not None)
+        downstream_energy = sum(child["effective_energy_kwh"] for child in children if child["effective_energy_kwh"] is not None)
+        has_downstream_power = any(child["effective_power_kw"] is not None for child in children)
+        has_downstream_energy = any(child["effective_energy_kwh"] is not None for child in children)
+        measured_power = meter["power_kw"] if meter else None
+        measured_energy = meter["energy_kwh"] if meter else None
+        measured_energy_24h = meter["energy_24h_kwh"] if meter else None
+        downstream_energy_24h = sum(child["effective_energy_24h_kwh"] for child in children if child["effective_energy_24h_kwh"] is not None)
+        has_downstream_energy_24h = any(child["effective_energy_24h_kwh"] is not None for child in children)
+        effective_power = measured_power if measured_power is not None else (downstream_power if has_downstream_power else None)
+        effective_energy = measured_energy if measured_energy is not None else (downstream_energy if has_downstream_energy else None)
+        effective_energy_24h = measured_energy_24h if measured_energy_24h is not None else (downstream_energy_24h if has_downstream_energy_24h else None)
+        residual_power = measured_power - downstream_power if measured_power is not None and has_downstream_power else None
+        residual_energy = measured_energy - downstream_energy if measured_energy is not None and has_downstream_energy else None
+        coverage = downstream_power / measured_power * 100 if measured_power not in {None, 0} and has_downstream_power else None
+        return {
+            "id": asset.id, "parent_id": asset.parent_id, "name": asset.name, "category": asset.category,
+            "description": asset.description, "meter": meter, "meters": meters, "children": children,
+            "measured_power_kw": measured_power, "measured_energy_kwh": measured_energy,
+            "downstream_power_kw": downstream_power if has_downstream_power else None,
+            "downstream_energy_kwh": downstream_energy if has_downstream_energy else None,
+            "effective_power_kw": effective_power, "effective_energy_kwh": effective_energy,
+            "measured_energy_24h_kwh": measured_energy_24h,
+            "downstream_energy_24h_kwh": downstream_energy_24h if has_downstream_energy_24h else None,
+            "effective_energy_24h_kwh": effective_energy_24h,
+            "residual_energy_24h_kwh": measured_energy_24h - downstream_energy_24h if measured_energy_24h is not None and has_downstream_energy_24h else None,
+            "residual_power_kw": residual_power, "residual_energy_kwh": residual_energy,
+            "coverage_percent": coverage,
+        }
+
+    roots = [build(asset) for asset in children_by_parent.get(None, [])]
+    plant_power = sum(root["effective_power_kw"] for root in roots if root["effective_power_kw"] is not None)
+    plant_energy = sum(root["effective_energy_kwh"] for root in roots if root["effective_energy_kwh"] is not None)
+    plant_energy_24h = sum(root["effective_energy_24h_kwh"] for root in roots if root["effective_energy_24h_kwh"] is not None)
+    unassigned = [device_stats[device.id] for device in devices if device.id not in assigned]
+    return {
+        "roots": roots,
+        "plant": {"power_kw": plant_power, "energy_kwh": plant_energy, "energy_24h_kwh": plant_energy_24h, "root_count": len(roots)},
+        "unassigned_devices": unassigned,
+        "calculation_policy": "upstream_meter_authoritative_else_sum_children",
+    }
+
+
+@app.get("/api/energy/overview")
+def energy_overview(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    """Vendor-neutral power-flow snapshot for grid, generation, storage and flexible loads."""
+    devices = list(db.scalars(select(Device).where(Device.active.is_(True)).order_by(Device.name)))
+    rows = list(db.scalars(select(TelemetrySample).where(TelemetrySample.quality == "good").order_by(TelemetrySample.sample_at.desc()).limit(10000)))
+    latest: dict[tuple[str, str], TelemetrySample] = {}
+    for sample in rows: latest.setdefault((sample.device_id, sample.measurement_key), sample)
+
+    def value(device_id: str, *keys: str) -> float | None:
+        for key in keys:
+            sample = latest.get((device_id, key))
+            if sample and sample.value is not None: return float(sample.value)
+        return None
+
+    inventory = []
+    for device in devices:
+        profile = db.get(DeviceProfile, device.profile_id)
+        definition = profile.definition if profile else {}
+        category = definition.get("category", "device")
+        headline_keys = {
+            "pv_inverter": ("pv.power.ac_total", "electrical.active_power.total"),
+            "battery_storage": ("storage.power.active",),
+            "ev_charger": ("ev.power.active", "electrical.active_power.total"),
+            "multimeter": ("electrical.active_power.total",),
+        }.get(category, ("electrical.active_power.total",))
+        inventory.append({
+            "id": device.id, "name": device.name, "category": category,
+            "manufacturer": definition.get("manufacturer", ""), "model": definition.get("model", device.profile_id),
+            "status": device.status, "power_kw": value(device.id, *headline_keys),
+            "soc_percent": value(device.id, "storage.soc"), "energy_today_kwh": value(device.id, "pv.energy.today"),
+            "temperature_c": value(device.id, "pv.inverter.temperature", "storage.temperature"),
+            "updated_at": max((sample.sample_at for (owner, _), sample in latest.items() if owner == device.id), default=None),
+        })
+
+    def total(category: str) -> float:
+        return sum(item["power_kw"] for item in inventory if item["category"] == category and item["power_kw"] is not None)
+
+    primary_binding = db.scalar(select(MeasurementBinding).where(MeasurementBinding.role == "primary", MeasurementBinding.measurement_key == "electrical.energy.import_total").order_by(MeasurementBinding.created_at).limit(1))
+    authoritative_grid = next((item for item in inventory if primary_binding and item["id"] == primary_binding.device_id and item["power_kw"] is not None), None)
+    grid_candidates = [item for item in inventory if item["category"] == "multimeter" and item["power_kw"] is not None]
+    grid_power = authoritative_grid["power_kw"] if authoritative_grid else grid_candidates[0]["power_kw"] if grid_candidates else 0.0
+    solar_power = total("pv_inverter")
+    storage_power = total("battery_storage")  # positive discharge, negative charge
+    ev_power = max(0.0, total("ev_charger"))
+    estimated_load = max(0.0, grid_power + solar_power + max(storage_power, 0) - max(-storage_power, 0))
+    solar_to_load = min(max(solar_power, 0), estimated_load)
+    self_consumption = solar_to_load / solar_power * 100 if solar_power > 0 else None
+    renewable_share = solar_to_load / estimated_load * 100 if estimated_load > 0 else None
+    storage_items = [item for item in inventory if item["category"] == "battery_storage" and item["soc_percent"] is not None]
+    average_soc = sum(item["soc_percent"] for item in storage_items) / len(storage_items) if storage_items else None
+    return {
+        "generated_at": utcnow(), "inventory": inventory,
+        "counts": {category: sum(item["category"] == category for item in inventory) for category in {item["category"] for item in inventory}},
+        "flows": {
+            "grid_kw": grid_power, "solar_kw": solar_power, "storage_kw": storage_power,
+            "load_kw": estimated_load, "ev_kw": ev_power,
+            "grid_direction": "import" if grid_power >= 0 else "export", "grid_device_id": authoritative_grid["id"] if authoritative_grid else None,
+            "storage_direction": "discharge" if storage_power > 0 else "charge" if storage_power < 0 else "idle",
+        },
+        "kpis": {
+            "self_consumption_percent": self_consumption, "renewable_share_percent": renewable_share,
+            "storage_soc_percent": average_soc, "devices_online": sum(item["status"] == "online" for item in inventory),
+            "devices_degraded": sum(item["status"] == "degraded" for item in inventory), "devices_total": len(inventory),
+        },
+    }
+
+
+@app.put("/api/plant/site")
+def update_local_site(data: LocalSiteInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    site = db.scalar(select(LocalSite).limit(1))
+    if not site:
+        site = LocalSite(name=data.name); db.add(site)
+    else:
+        site.name = data.name
+    db.add(AuditEvent(actor=user.username, action="plant.site.update", target_type="local_site", target_id=site.id, details={"name": data.name}))
+    db.commit(); return as_dict(site)
+
+
+@app.post("/api/catalog/import")
+async def catalog_import(user: Annotated[User, Depends(require_roles("platform_admin", "technician"))], db: Annotated[Session, Depends(get_db)], file: UploadFile = File(...)) -> dict:
+    content = (await file.read()).decode("utf-8")
+    try: raw = parse_profile(content, "json" if file.filename and file.filename.endswith(".json") else "yaml")
+    except Exception as exc: raise HTTPException(422, f"Cannot parse catalog: {exc}") from exc
+    try: documents = expand_catalog_document(raw)
+    except ValueError as exc: raise HTTPException(422, str(exc)) from exc
+    validated = []
+    all_errors = []
+    for document in documents:
+        profile, errors = validate_profile(document)
+        if errors: all_errors.extend([f"{document.get('id', 'profile')}: {error}" for error in errors])
+        else: validated.append(profile)
+    if all_errors: return JSONResponse(status_code=422, content={"valid": False, "errors": all_errors})
+    imported = []
+    for profile in validated:
+        definition = profile.model_dump()
+        existing = db.get(CatalogProfile, profile.id)
+        version_row = db.scalar(select(CatalogProfileVersion).where(CatalogProfileVersion.profile_id == profile.id, CatalogProfileVersion.version == profile.version))
+        if not existing:
+            db.add(CatalogProfile(id=profile.id, manufacturer=profile.manufacturer, model=profile.model, category=profile.category, latest_version=profile.version))
+        else:
+            existing.latest_version = profile.version; existing.manufacturer = profile.manufacturer; existing.model = profile.model; existing.category = profile.category
+        if not version_row: db.add(CatalogProfileVersion(profile_id=profile.id, version=profile.version, definition=definition, valid=True))
+        if settings.mode == "edge":
+            local = db.get(DeviceProfile, profile.id)
+            if local: local.version = profile.version; local.definition = definition; local.valid = True
+            else: db.add(DeviceProfile(id=profile.id, version=profile.version, definition=definition, valid=True))
+            existing_keys = set(db.scalars(select(RegisterDefinition.key).where(RegisterDefinition.profile_id == profile.id)))
+            for point in definition["points"]:
+                if point["key"] not in existing_keys: db.add(RegisterDefinition(profile_id=profile.id, key=point["key"], definition=point))
+        db.add(AuditEvent(actor=user.username, action="catalog.import", target_type="profile", target_id=profile.id, details={"version": profile.version}))
+        imported.append({"id": profile.id, "version": profile.version})
+    db.commit()
+    result = {"valid": True, "profiles": imported}
+    if len(imported) == 1: result.update(imported[0])
+    return result
+
+
+@app.get("/api/catalog/{profile_id}/export")
+def catalog_export(profile_id: str, user: Annotated[User, Depends(current_user)], db: Annotated[Session, Depends(get_db)]):
+    row = db.scalar(select(CatalogProfileVersion).where(CatalogProfileVersion.profile_id == profile_id).order_by(CatalogProfileVersion.created_at.desc()))
+    if not row: raise HTTPException(404, "Profile not found")
+    return JSONResponse(content=row.definition, headers={"Content-Disposition": f'attachment; filename="{profile_id}.json"'})
+
+
+@app.post("/api/catalog/{profile_id}/duplicate")
+def catalog_duplicate(profile_id: str, user: Annotated[User, Depends(require_roles("platform_admin", "technician"))], db: Annotated[Session, Depends(get_db)]) -> dict:
+    source = db.scalar(select(CatalogProfileVersion).where(CatalogProfileVersion.profile_id == profile_id).order_by(CatalogProfileVersion.created_at.desc()))
+    if not source: raise HTTPException(404, "Profile not found")
+    new_id = next_copy_id(profile_id); suffix = 2
+    while db.get(CatalogProfile, new_id): new_id = f"{next_copy_id(profile_id)}-{suffix}"; suffix += 1
+    definition = dict(source.definition); definition["id"] = new_id
+    db.add(CatalogProfile(id=new_id, manufacturer=definition["manufacturer"], model=definition["model"] + " Copy", category=definition["category"], latest_version=definition["version"]))
+    db.add(CatalogProfileVersion(profile_id=new_id, version=definition["version"], definition=definition, valid=True))
+    if settings.mode == "edge": db.add(DeviceProfile(id=new_id, version=definition["version"], definition=definition, valid=True))
+    db.commit(); return {"id": new_id}
+
+
+@app.post("/api/catalog/validate")
+def catalog_validate(raw: dict = Body(...), user: User = Depends(current_user)) -> dict:
+    try: documents = expand_catalog_document(raw)
+    except ValueError as exc: return {"valid": False, "errors": [str(exc)]}
+    errors = []
+    for document in documents: errors.extend(validate_profile(document)[1])
+    return {"valid": not errors, "errors": errors, "profiles": len(documents)}
+
+
+@app.post("/api/catalog/preview")
+def catalog_preview(payload: dict = Body(...), user: User = Depends(current_user)) -> dict:
+    try: return {"value": decode_registers(payload["registers"], payload["definition"])}
+    except Exception as exc: raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/connections")
+def connections(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(Connection))]
+
+
+@app.post("/api/connections")
+def create_connection(data: ConnectionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if data.kind not in {"modbus_tcp", "modbus_rtu"}: raise HTTPException(422, "Unsupported connection kind")
+    item = Connection(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="connection.create", target_type="connection", target_id=item.id, details={"name": item.name, "kind": item.kind}))
+    db.commit(); return as_dict(item)
+
+
+@app.put("/api/connections/{connection_id}")
+def update_connection(connection_id: str, data: ConnectionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if data.kind not in {"modbus_tcp", "modbus_rtu"}: raise HTTPException(422, "Unsupported connection kind")
+    item = db.get(Connection, connection_id)
+    if not item: raise HTTPException(404, "Connection not found")
+    item.name = data.name; item.kind = data.kind; item.config = data.config
+    item.status = "unknown"; item.last_error = None
+    db.add(AuditEvent(actor=user.username, action="connection.update", target_type="connection", target_id=item.id, details={"name": item.name, "kind": item.kind}))
+    db.commit(); return as_dict(item)
+
+
+@app.post("/api/connections/{connection_id}/test")
+async def test_connection(connection_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    connection = db.get(Connection, connection_id)
+    if not connection: raise HTTPException(404, "Connection not found")
+    device = db.scalar(select(Device).where(Device.connection_id == connection_id).limit(1))
+    if not device: raise HTTPException(409, "No device configured")
+    count = await poll_device(device.id); db.refresh(connection)
+    connection.last_test_at = utcnow(); connection.status = "online" if count else "offline"; db.commit()
+    return {"status": connection.status, "samples": count}
+
+
+@app.get("/api/devices")
+def devices(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(Device).order_by(Device.name))]
+
+
+@app.post("/api/devices")
+def create_device(data: DeviceInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    connection = db.get(Connection, data.connection_id)
+    profile = db.get(DeviceProfile, data.profile_id)
+    if not connection or not profile:
+        raise HTTPException(422, "Unknown connection or profile")
+    if connection.kind not in profile.definition.get("protocols", []):
+        raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
+    item = Device(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="device.create", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
+    db.commit(); return as_dict(item)
+
+
+@app.put("/api/devices/{device_id}")
+def update_device(device_id: str, data: DeviceInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(Device, device_id)
+    if not item: raise HTTPException(404, "Device not found")
+    connection = db.get(Connection, data.connection_id)
+    profile = db.get(DeviceProfile, data.profile_id)
+    if not connection or not profile: raise HTTPException(422, "Unknown connection or profile")
+    if connection.kind not in profile.definition.get("protocols", []):
+        raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
+    for key, value in data.model_dump().items(): setattr(item, key, value)
+    item.status = "unknown"; item.last_error = None; item.consecutive_errors = 0
+    db.add(AuditEvent(actor=user.username, action="device.update", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
+    db.commit(); return as_dict(item)
+
+
+@app.patch("/api/devices/{device_id}/active")
+def toggle_device(device_id: str, active: bool, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(Device, device_id)
+    if not item: raise HTTPException(404, "Device not found")
+    item.active = active; db.commit(); return as_dict(item)
+
+
+@app.post("/api/devices/{device_id}/poll")
+async def manual_poll(device_id: str, user: User = Depends(current_user)) -> dict:
+    return {"samples": await poll_device(device_id)}
+
+
+@app.get("/api/assets")
+def assets(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(AssetNode).order_by(AssetNode.sort_order))]
+
+
+@app.post("/api/assets")
+def create_asset(data: AssetInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if data.parent_id and not db.get(AssetNode, data.parent_id): raise HTTPException(422, "Parent not found")
+    item = AssetNode(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="asset.create", target_type="asset", target_id=item.id, details={"name": item.name, "parent_id": item.parent_id}))
+    db.commit(); return as_dict(item)
+
+
+@app.put("/api/assets/{asset_id}")
+def update_asset(asset_id: str, data: AssetInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(AssetNode, asset_id)
+    if not item: raise HTTPException(404, "Asset not found")
+    if data.parent_id == asset_id: raise HTTPException(422, "Asset cannot be its own parent")
+    ancestor_id = data.parent_id
+    while ancestor_id:
+        if ancestor_id == asset_id:
+            raise HTTPException(422, "Asset hierarchy cannot contain cycles")
+        ancestor = db.get(AssetNode, ancestor_id)
+        if not ancestor:
+            raise HTTPException(422, "Parent not found")
+        ancestor_id = ancestor.parent_id
+    for key, value in data.model_dump().items(): setattr(item, key, value)
+    db.add(AuditEvent(actor=user.username, action="asset.update", target_type="asset", target_id=item.id, details={"name": item.name, "parent_id": item.parent_id, "sort_order": item.sort_order}))
+    db.commit(); return as_dict(item)
+
+
+@app.delete("/api/assets/{asset_id}")
+def delete_asset(asset_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(AssetNode, asset_id)
+    if not item: raise HTTPException(404, "Asset not found")
+    if db.scalar(select(AssetNode.id).where(AssetNode.parent_id == asset_id).limit(1)): raise HTTPException(409, "Move or delete child assets first")
+    if db.scalar(select(MeasurementBinding.id).where(MeasurementBinding.asset_id == asset_id).limit(1)): raise HTTPException(409, "Remove measurement bindings first")
+    db.delete(item); db.commit(); return {"deleted": asset_id}
+
+
+@app.get("/api/bindings")
+def bindings(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    rows = db.execute(select(MeasurementBinding, AssetNode.name, Device.name).join(AssetNode, MeasurementBinding.asset_id == AssetNode.id).join(Device, MeasurementBinding.device_id == Device.id)).all()
+    return [{**as_dict(binding), "asset_name": asset_name, "device_name": device_name} for binding, asset_name, device_name in rows]
+
+
+@app.post("/api/bindings")
+def create_binding(data: BindingInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if not db.get(AssetNode, data.asset_id) or not db.get(Device, data.device_id): raise HTTPException(422, "Asset or device not found")
+    duplicate = db.scalar(select(MeasurementBinding).where(MeasurementBinding.asset_id == data.asset_id, MeasurementBinding.device_id == data.device_id, MeasurementBinding.measurement_key == data.measurement_key))
+    if duplicate: raise HTTPException(409, "Measurement already associated")
+    if data.role == "primary":
+        other_placement = db.scalar(select(MeasurementBinding).where(MeasurementBinding.device_id == data.device_id, MeasurementBinding.role == "primary", MeasurementBinding.asset_id != data.asset_id).limit(1))
+        if other_placement:
+            raise HTTPException(409, "A device can have only one primary position in the energy tree")
+    item = MeasurementBinding(**data.model_dump()); db.add(item); db.commit(); return as_dict(item)
+
+
+@app.delete("/api/bindings/{binding_id}")
+def delete_binding(binding_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(MeasurementBinding, binding_id)
+    if not item: raise HTTPException(404, "Binding not found")
+    db.delete(item); db.commit(); return {"deleted": binding_id}
+
+
+@app.get("/api/telemetry/live")
+def live(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    rows = db.execute(select(TelemetrySample).order_by(TelemetrySample.sample_at.desc()).limit(1000)).scalars()
+    found = {}
+    for row in rows: found.setdefault((row.device_id, row.measurement_key), as_dict(row))
+    return list(found.values())
+
+
+@app.get("/api/telemetry/history")
+def history(measurement_key: str | None = None, hours: int = 24, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    query = select(TelemetrySample).where(TelemetrySample.sample_at >= utcnow() - timedelta(hours=min(hours, 24 * 90))).order_by(TelemetrySample.sample_at)
+    if measurement_key: query = query.where(TelemetrySample.measurement_key == measurement_key)
+    return [as_dict(item) for item in db.scalars(query.limit(5000))]
+
+
+@app.get("/api/analytics/timeseries")
+def analytics_timeseries(
+    device_id: str | None = None,
+    measurement_keys: str = "electrical.active_power.total",
+    hours: int = 24,
+    bucket_minutes: int = 5,
+    user: User = Depends(current_user), db: Session = Depends(get_db),
+) -> dict:
+    hours = min(max(hours, 1), 24 * 365 * 5)
+    bucket_minutes = min(max(bucket_minutes, 1), 24 * 60)
+    keys = [key.strip() for key in measurement_keys.split(",") if key.strip()][:8]
+    if not keys: raise HTTPException(422, "At least one measurement key is required")
+    since = utcnow() - timedelta(hours=hours)
+    query = select(TelemetrySample).where(
+        TelemetrySample.sample_at >= since,
+        TelemetrySample.measurement_key.in_(keys),
+        TelemetrySample.quality == "good",
+        TelemetrySample.value.is_not(None),
+    ).order_by(TelemetrySample.sample_at)
+    if device_id: query = query.where(TelemetrySample.device_id == device_id)
+    samples = list(db.scalars(query.limit(100000)))
+    bucket_seconds = bucket_minutes * 60
+    grouped: dict[tuple[str, str, int], list[float]] = defaultdict(list)
+    units: dict[tuple[str, str], str] = {}
+    for sample in samples:
+        stamp = int(sample.sample_at.timestamp()) // bucket_seconds * bucket_seconds
+        grouped[(sample.device_id, sample.measurement_key, stamp)].append(float(sample.value))
+        units[(sample.device_id, sample.measurement_key)] = sample.unit
+    series: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for (owner, key, stamp), values in sorted(grouped.items(), key=lambda item: item[0][2]):
+        series[(owner, key)].append({
+            "time": datetime.fromtimestamp(stamp, timezone.utc), "avg": sum(values) / len(values),
+            "min": min(values), "max": max(values), "count": len(values),
+        })
+    devices = {device.id: device for device in db.scalars(select(Device))}
+    available = []
+    for device in devices.values():
+        profile = db.get(DeviceProfile, device.profile_id)
+        definition = profile.definition if profile else {}
+        for point in definition.get("points", []) + definition.get("derived_points", []):
+            available.append({"device_id": device.id, "device_name": device.name, "category": definition.get("category", "device"), "key": point["key"], "label": point.get("label", point["key"]), "unit": point.get("unit", ""), "group": point.get("group", "Misure")})
+    return {
+        "from": since, "to": utcnow(), "bucket_minutes": bucket_minutes,
+        "series": [{"device_id": owner, "device_name": devices.get(owner).name if devices.get(owner) else owner, "key": key, "unit": units.get((owner, key), ""), "points": points} for (owner, key), points in series.items()],
+        "available": available, "sample_count": len(samples),
+    }
+
+
+@app.get("/api/storage/status")
+def storage_status(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    quality_rows = db.execute(select(TelemetrySample.quality, func.count()).group_by(TelemetrySample.quality)).all()
+    return {
+        "persistence": "local_database",
+        "retention_policy": "explicit_no_automatic_deletion",
+        "samples": db.scalar(select(func.count()).select_from(TelemetrySample)) or 0,
+        "oldest_sample_at": db.scalar(select(func.min(TelemetrySample.sample_at))),
+        "newest_sample_at": db.scalar(select(func.max(TelemetrySample.sample_at))),
+        "quality": {quality: count for quality, count in quality_rows},
+        "pending_sync_events": db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0,
+        "analytics_max_range_days": 365 * 5,
+    }
+
+
+@app.get("/api/kpis")
+def kpis(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    devices = list(db.scalars(select(Device).order_by(Device.unit_id)))
+    deltas = []
+    for device in devices[:3]:
+        rows = list(db.scalars(select(TelemetrySample).where(TelemetrySample.device_id == device.id, TelemetrySample.measurement_key == "electrical.energy.import_total", TelemetrySample.quality == "good").order_by(TelemetrySample.sample_at.desc()).limit(2)))
+        deltas.append(counter_delta(rows[1].value, rows[0].value).__dict__ if len(rows) == 2 else {"value": None, "quality": "missing", "reason": "need two samples"})
+    unassigned = unattributed_energy(deltas[0]["value"] if deltas else None, [item["value"] for item in deltas[1:3]])
+    online = sum(item.status == "online" for item in devices)
+    main_id = devices[0].id if devices else ""
+    return {"instant_power_kw": (db.scalar(select(TelemetrySample.value).where(TelemetrySample.device_id == main_id, TelemetrySample.measurement_key == "electrical.active_power.total").order_by(TelemetrySample.sample_at.desc()))), "energy_interval": deltas, "unattributed": unassigned, "communication_availability_percent": online / len(devices) * 100 if devices else 0, "data_quality": "good" if deltas and deltas[0]["quality"] == "good" else "missing"}
+
+
+@app.get("/api/kpi-definitions")
+def kpi_definitions(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(KpiDefinition).order_by(KpiDefinition.name))]
+
+
+@app.post("/api/kpi-definitions")
+def create_kpi_definition(data: KpiDefinitionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = KpiDefinition(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="kpi.create", target_type="kpi_definition", target_id=item.id, details={"name": item.name, "kind": item.kind}))
+    db.commit(); return as_dict(item)
+
+
+@app.put("/api/kpi-definitions/{definition_id}")
+def update_kpi_definition(definition_id: str, data: KpiDefinitionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(KpiDefinition, definition_id)
+    if not item: raise HTTPException(404, "KPI definition not found")
+    item.name = data.name; item.kind = data.kind; item.config = data.config
+    db.add(AuditEvent(actor=user.username, action="kpi.update", target_type="kpi_definition", target_id=item.id, details={"name": item.name, "kind": item.kind}))
+    db.commit(); return as_dict(item)
+
+
+@app.delete("/api/kpi-definitions/{definition_id}")
+def delete_kpi_definition(definition_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(KpiDefinition, definition_id)
+    if not item: raise HTTPException(404, "KPI definition not found")
+    db.delete(item); db.add(AuditEvent(actor=user.username, action="kpi.delete", target_type="kpi_definition", target_id=definition_id, details={"name": item.name})); db.commit()
+    return {"deleted": definition_id}
+
+
+@app.get("/api/kpis/portfolio")
+def kpi_portfolio(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    rows = list(db.scalars(select(TelemetrySample).where(TelemetrySample.quality == "good", TelemetrySample.value.is_not(None)).order_by(TelemetrySample.sample_at.desc()).limit(10000)))
+    latest: dict[tuple[str, str], float] = {}
+    for row in rows: latest.setdefault((row.device_id, row.measurement_key), float(row.value))
+    def values(key: str, device_id: str | None = None) -> list[float]: return [value for (owner, measurement), value in latest.items() if measurement == key and (not device_id or owner == device_id)]
+    results = []
+    for definition in db.scalars(select(KpiDefinition).order_by(KpiDefinition.name)):
+        config = definition.config; result: float | None = None; reason = None
+        if definition.kind == "latest":
+            candidates = values(config.get("measurement_key", ""), config.get("device_id")); result = candidates[0] if candidates else None
+        elif definition.kind == "sum":
+            candidates = values(config.get("measurement_key", "")); result = sum(candidates) if candidates else None
+        elif definition.kind == "ratio":
+            numerator = sum(values(config.get("numerator_key", ""))); denominator = sum(values(config.get("denominator_key", "")))
+            result = numerator / denominator * float(config.get("scale", 100)) if denominator else None
+        if result is None: reason = "missing_source_data"
+        target = config.get("target"); direction = config.get("direction", "above")
+        on_target = None if result is None or target is None else (result >= float(target) if direction == "above" else result <= float(target))
+        results.append({"id": definition.id, "name": definition.name, "kind": definition.kind, "value": result, "unit": config.get("unit", ""), "target": target, "direction": direction, "on_target": on_target, "reason": reason})
+    return {"generated_at": utcnow(), "definitions": results}
+
+
+@app.get("/api/alarms")
+def alarms(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(AlarmEvent).order_by(AlarmEvent.opened_at.desc()))]
+
+
+@app.get("/api/alarm-rules")
+def alarm_rules(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    result = []
+    for rule in db.scalars(select(AlarmRule).order_by(AlarmRule.active.desc(), AlarmRule.name)):
+        result.append({**as_dict(rule), **rule.config})
+    return result
+
+
+@app.post("/api/alarm-rules")
+def create_alarm_rule(data: AlarmRuleInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if data.device_id and not db.get(Device, data.device_id):
+        raise HTTPException(422, "Unknown device")
+    if data.condition in {"above", "below"} and data.threshold is None:
+        raise HTTPException(422, "A threshold is required")
+    if data.condition == "outside" and (data.low is None or data.high is None or data.low >= data.high):
+        raise HTTPException(422, "A valid low/high interval is required")
+    unsupported_channels = set(data.notification_channels) - {"in_app"}
+    if unsupported_channels:
+        raise HTTPException(422, f"Notification channels not configured: {', '.join(sorted(unsupported_channels))}")
+    kind = {"above": "measurement_above", "below": "measurement_below", "outside": "measurement_outside"}[data.condition]
+    config = {
+        "device_id": data.device_id,
+        "measurement_key": data.measurement_key,
+        "threshold": data.threshold,
+        "low": data.low,
+        "high": data.high,
+        "deadband": data.deadband,
+        "notification_channels": data.notification_channels,
+    }
+    rule = AlarmRule(name=data.name, kind=kind, config=config, severity=data.severity, active=data.active)
+    db.add(rule); db.flush()
+    db.add(AuditEvent(actor=user.username, action="alarm_rule.create", target_type="alarm_rule", target_id=rule.id, details={"name": rule.name, "severity": rule.severity, "config": config}))
+    db.commit()
+    return {**as_dict(rule), **rule.config}
+
+
+@app.patch("/api/alarm-rules/{rule_id}/active")
+def set_alarm_rule_active(rule_id: str, active: bool = Body(embed=True), user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    rule = db.get(AlarmRule, rule_id)
+    if not rule:
+        raise HTTPException(404, "Alarm rule not found")
+    rule.active = active
+    db.add(AuditEvent(actor=user.username, action="alarm_rule.active", target_type="alarm_rule", target_id=rule.id, details={"active": active}))
+    db.commit()
+    return {**as_dict(rule), **rule.config}
+
+
+@app.delete("/api/alarm-rules/{rule_id}")
+def delete_alarm_rule(rule_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    rule = db.get(AlarmRule, rule_id)
+    if not rule:
+        raise HTTPException(404, "Alarm rule not found")
+    event_count = db.scalar(select(func.count()).select_from(AlarmEvent).where(AlarmEvent.rule_id == rule.id)) or 0
+    if event_count:
+        rule.active = False
+        action = "archived"
+    else:
+        db.delete(rule)
+        action = "deleted"
+    db.add(AuditEvent(actor=user.username, action=f"alarm_rule.{action}", target_type="alarm_rule", target_id=rule_id, details={"name": rule.name}))
+    db.commit()
+    return {"id": rule_id, "status": action}
+
+
+@app.post("/api/alarms/{event_id}/acknowledge")
+def acknowledge_alarm(event_id: str, user: User = Depends(require_roles("platform_admin", "technician", "operator")), db: Session = Depends(get_db)) -> dict:
+    event = db.get(AlarmEvent, event_id)
+    if not event:
+        raise HTTPException(404, "Alarm not found")
+    if event.status == "open":
+        event.status = "acknowledged"
+        db.add(AuditEvent(actor=user.username, action="alarm.acknowledge", target_type="alarm_event", target_id=event.id, details={"description": event.description}))
+        db.commit()
+    return as_dict(event)
+
+
+@app.post("/api/alarms/{event_id}/close")
+def close_alarm(event_id: str, user: User = Depends(require_roles("platform_admin", "technician", "operator")), db: Session = Depends(get_db)) -> dict:
+    event = db.get(AlarmEvent, event_id)
+    if not event: raise HTTPException(404, "Alarm not found")
+    event.status = "closed"; event.closed_at = utcnow(); db.commit(); return as_dict(event)
+
+
+@app.get("/api/sync/status")
+def sync_status(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    pending = db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0
+    failed = db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None), SyncOutbox.attempts > 0)) or 0
+    last_sent = db.scalar(select(func.max(SyncOutbox.sent_at)))
+    return {"pending": pending, "failed": failed, "last_sent_at": last_sent, "control_room_url": settings.control_room_url}
+
+
+@app.post("/api/sync/run")
+async def run_sync(user: User = Depends(require_roles("platform_admin", "technician"))) -> dict:
+    return await sync_once()
+
+
+@app.post("/api/ingest/batches")
+def ingest_batch(payload: dict = Body(...), authorization: str = Header(default=""), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "control-room": raise HTTPException(404)
+    edge = db.get(Edge, payload.get("edge_id"))
+    token = authorization.removeprefix("Bearer ").strip()
+    if not edge or not token or not verify_password(token, edge.token_hash): raise HTTPException(401, "Invalid edge token")
+    if batch_already_ingested(db, payload.get("batch_id")): return {"accepted": True, "duplicate": True, "batch_id": payload["batch_id"]}
+    for item in payload.get("samples", []):
+        if not item.get("sample_id"): continue
+        db.add(TelemetrySample(device_id=item["device_id"], measurement_key=item["measurement_key"], value=item.get("value"), unit=item.get("unit", ""), sample_at=datetime.fromisoformat(item["sample_at"]), received_at=datetime.fromisoformat(item["received_at"]), quality=item.get("quality", "good"), origin=f"edge:{edge.id}", source_sample_id=item["sample_id"]))
+    db.add(IngestedBatch(id=payload["batch_id"], edge_id=edge.id)); edge.status = "online"; edge.last_seen_at = utcnow(); db.commit()
+    return {"accepted": True, "duplicate": False, "batch_id": payload["batch_id"], "count": len(payload.get("samples", []))}
+
+
+@app.get("/api/fleet")
+def fleet(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    if settings.mode != "control-room": raise HTTPException(404)
+    query = select(Edge, Site, Tenant).join(Site, Edge.site_id == Site.id).join(Tenant, Site.tenant_id == Tenant.id)
+    if user.role not in {"platform_admin", "technician"}:
+        if not user.tenant_id: return []
+        query = query.where(Tenant.id == user.tenant_id)
+    rows = db.execute(query).all()
+    return [{**as_dict(edge), "site": site.name, "tenant": tenant.name} for edge, site, tenant in rows]
+
+
+@app.post("/api/edges/{edge_id}/activation")
+def create_activation(edge_id: str, request: Request, expires_minutes: int = 30, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    sensitive_rate_limit(request)
+    if not db.get(Edge, edge_id): raise HTTPException(404, "Edge not found")
+    code = secrets.token_urlsafe(18)
+    item = EdgeActivation(edge_id=edge_id, code_hash=hash_password(code), expires_at=utcnow() + timedelta(minutes=min(expires_minutes, 1440)))
+    db.add(item); db.commit(); return {"activation_id": item.id, "code": code, "expires_at": item.expires_at}
+
+
+@app.post("/api/activate")
+async def activate(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)) -> dict:
+    sensitive_rate_limit(request)
+    candidates = list(db.scalars(select(EdgeActivation).where(EdgeActivation.used_at.is_(None), EdgeActivation.expires_at > utcnow())))
+    activation = next((item for item in candidates if verify_password(payload.get("code", ""), item.code_hash)), None)
+    if not activation: raise HTTPException(401, "Invalid or expired activation code")
+    edge = db.get(Edge, activation.edge_id); edge.hostname = payload.get("hostname", edge.hostname); activation.used_at = utcnow()
+    auth_key = await tailscale_provider.create_auth_key(["tag:em-edge"], reusable=False)
+    db.commit(); return {"edge_id": edge.id, "tailscale_auth_key": auth_key, "provider": "fake", "control_room_url": str(request.base_url).rstrip("/")}
+
+
+@app.get("/api/tailscale/diagnostics")
+def tailscale_diagnostics(user: User = Depends(current_user)) -> dict:
+    return NetworkAgent(dry_run=True).diagnostics()
+
+
+@app.get("/api/tailscale/nodes")
+async def tailscale_nodes(user: User = Depends(current_user)) -> list[dict]:
+    return [node_dict(node) for node in await tailscale_provider.list_nodes()]
+
+
+@app.post("/api/tailscale/webhook")
+async def tailscale_webhook(request: Request, x_webhook_signature: str = Header(default=""), db: Session = Depends(get_db)) -> dict:
+    body = await request.body()
+    if not webhook_signature_valid(body, x_webhook_signature, settings.webhook_secret): raise HTTPException(401, "Invalid webhook signature")
+    payload = json.loads(body)
+    allowed = {"nodeCreated", "nodeDeleted", "nodeApproved", "nodeNeedsApproval", "nodeKeyExpired", "policyUpdate"}
+    if payload.get("type") not in allowed: raise HTTPException(422, "Unsupported event")
+    db.add(AuditEvent(actor="tailscale-webhook", action=payload["type"], target_type="tailscale_node", target_id=payload.get("nodeId"), details=payload)); db.commit()
+    return {"accepted": True}
+
+
+@app.get("/api/audit")
+def audit(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> list[dict]:
+    query = select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(500)
+    if user.role != "platform_admin" and user.tenant_id:
+        query = query.where(AuditEvent.tenant_id == user.tenant_id)
+    return [as_dict(item) for item in db.scalars(query)]
+
+
+@app.get("/api/users")
+def users(user: User = Depends(require_roles("platform_admin", "customer_admin")), db: Session = Depends(get_db)) -> list[dict]:
+    query = select(User).order_by(User.username)
+    if user.role == "customer_admin": query = query.where(User.tenant_id == user.tenant_id)
+    return [{"id": item.id, "username": item.username, "role": item.role, "active": item.active, "created_at": item.created_at, "updated_at": item.updated_at, "is_current": item.id == user.id} for item in db.scalars(query)]
+
+
+@app.post("/api/users")
+def create_user(data: UserCreateInput, user: User = Depends(require_roles("platform_admin", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    if db.scalar(select(User).where(User.username == data.username)): raise HTTPException(409, "Username already exists")
+    if user.role == "customer_admin" and data.role in {"platform_admin", "technician"}: raise HTTPException(403, "Role cannot be assigned")
+    item = User(username=data.username, password_hash=hash_password(data.password), role=data.role, active=data.active, tenant_id=user.tenant_id)
+    db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="user.create", target_type="user", target_id=item.id, details={"username": item.username, "role": item.role}))
+    db.commit(); return {"id": item.id, "username": item.username, "role": item.role, "active": item.active}
+
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: str, data: UserUpdateInput, user: User = Depends(require_roles("platform_admin", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(User, user_id)
+    if not item: raise HTTPException(404, "User not found")
+    if user.role == "customer_admin" and (item.tenant_id != user.tenant_id or data.role in {"platform_admin", "technician"}): raise HTTPException(403, "User outside tenant scope")
+    if item.id == user.id and not data.active: raise HTTPException(409, "You cannot deactivate your current account")
+    if item.id == user.id and data.role != item.role: raise HTTPException(409, "You cannot change your current role")
+    item.role = data.role; item.active = data.active
+    if data.password: item.password_hash = hash_password(data.password)
+    db.add(AuditEvent(actor=user.username, action="user.update", target_type="user", target_id=item.id, details={"username": item.username, "role": item.role, "active": item.active, "password_changed": bool(data.password)}))
+    db.commit(); return {"id": item.id, "username": item.username, "role": item.role, "active": item.active}

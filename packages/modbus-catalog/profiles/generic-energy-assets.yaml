@@ -1,0 +1,83 @@
+bundle_version: 1.0.0
+profiles:
+  - id: generic-pv-inverter-v1
+    manufacturer: Generic
+    family: Renewable Energy
+    model: PV Inverter Test Profile
+    category: pv_inverter
+    description: Profilo vendor-neutral da banco. Gli indirizzi devono essere adattati al manuale del costruttore prima dell'uso su campo.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities: {energy_role: producer, dashboard: photovoltaic, writable: false}
+    points:
+      - {key: pv.voltage.dc, label: Tensione DC, function_code: 3, address: 0, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
+      - {key: pv.current.dc, label: Corrente DC, function_code: 3, address: 2, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Lato DC}
+      - {key: pv.power.dc_total, label: Potenza DC, function_code: 3, address: 4, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: pv.power.ac_total, label: Potenza AC prodotta, function_code: 3, address: 6, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: pv.energy.total, label: Energia prodotta totale, function_code: 3, address: 8, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+      - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 12, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Rete}
+      - {key: pv.inverter.efficiency, label: Rendimento inverter, function_code: 3, address: 14, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Prestazioni}
+      - {key: pv.inverter.temperature, label: Temperatura inverter, function_code: 3, address: 16, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Termica}
+      - {key: pv.energy.today, label: Energia prodotta oggi, function_code: 3, address: 18, register_count: 2, data_type: uint32, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+      - {key: device.operating_state, label: Stato operativo, function_code: 3, address: 20, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+
+  - id: generic-battery-storage-v1
+    manufacturer: Generic
+    family: BESS
+    model: Battery Storage Test Profile
+    category: battery_storage
+    description: Profilo vendor-neutral PCS/BMS da banco; potenza positiva in scarica e negativa in carica.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities: {energy_role: bidirectional, dashboard: storage, writable: false}
+    points:
+      - {key: storage.soc, label: Stato di carica, function_code: 3, address: 100, register_count: 2, data_type: float32, unit: '%', polling_group: fast, group: Batteria}
+      - {key: storage.soh, label: Stato di salute, function_code: 3, address: 102, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Batteria}
+      - {key: storage.power.active, label: Potenza accumulo, function_code: 3, address: 104, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: storage.energy.charge_total, label: Energia caricata totale, function_code: 3, address: 106, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+      - {key: storage.energy.discharge_total, label: Energia scaricata totale, function_code: 3, address: 110, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+      - {key: storage.voltage.dc, label: Tensione batteria, function_code: 3, address: 114, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
+      - {key: storage.current.dc, label: Corrente batteria, function_code: 3, address: 116, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Lato DC}
+      - {key: storage.temperature, label: Temperatura batteria, function_code: 3, address: 118, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Termica}
+      - {key: storage.cycles, label: Cicli equivalenti, function_code: 3, address: 120, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Vita utile}
+      - {key: storage.energy.available, label: Energia disponibile, function_code: 3, address: 122, register_count: 2, data_type: float32, unit: kWh, polling_group: normal, group: Energie}
+      - {key: device.operating_state, label: Stato PCS/BMS, function_code: 3, address: 124, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+
+  - id: generic-ev-charger-v1
+    manufacturer: Generic
+    family: EVSE
+    model: EV Charger Test Profile
+    category: ev_charger
+    description: Profilo read-only per monitoraggio energetico di una stazione di ricarica.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities: {energy_role: consumer, dashboard: ev_charging, writable: false}
+    points:
+      - {key: ev.power.active, label: Potenza di ricarica, function_code: 3, address: 200, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Sessione}
+      - {key: ev.energy.session, label: Energia sessione, function_code: 3, address: 202, register_count: 2, data_type: float32, unit: kWh, polling_group: fast, group: Sessione}
+      - {key: ev.energy.total, label: Energia totale erogata, function_code: 3, address: 204, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+      - {key: ev.session.duration, label: Durata sessione, function_code: 3, address: 208, register_count: 2, data_type: uint32, unit: s, polling_group: fast, group: Sessione}
+      - {key: device.operating_state, label: Stato connettore, function_code: 3, address: 210, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+
+  - id: generic-solar-sensor-v1
+    manufacturer: Generic
+    family: Weather Station
+    model: Solar Sensor Test Profile
+    category: environmental_sensor
+    description: Sensore ambientale per rendimento specifico e performance ratio fotovoltaico.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 10, unit_id: 1}
+    capabilities: {energy_role: context, dashboard: environment, writable: false}
+    points:
+      - {key: environment.irradiance.poa, label: Irraggiamento sul piano, function_code: 3, address: 300, register_count: 2, data_type: float32, unit: W/m², polling_group: fast, group: Irraggiamento}
+      - {key: environment.temperature.ambient, label: Temperatura ambiente, function_code: 3, address: 302, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Meteo}
+      - {key: environment.temperature.module, label: Temperatura moduli, function_code: 3, address: 304, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Meteo}
+      - {key: environment.wind.speed, label: Velocità vento, function_code: 3, address: 306, register_count: 2, data_type: float32, unit: m/s, polling_group: normal, group: Meteo}
