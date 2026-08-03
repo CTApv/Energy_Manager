@@ -1,0 +1,76 @@
+name: energy-manager-edge
+services:
+  edge-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      EM_MODE: edge
+      EM_ENVIRONMENT: production
+      EM_RELEASE: 0.2.0
+      EM_SECRET_KEY: ${EM_SECRET_KEY:?EM_SECRET_KEY is required}
+      EM_EDGE_DATABASE_URL: sqlite:////data/customer-edge.db
+      EM_CORS_ORIGINS: https://${EM_EDGE_HOSTNAME:?EM_EDGE_HOSTNAME is required}
+      EM_DEMO_ADMIN_PASSWORD: ${EM_BOOTSTRAP_ADMIN_PASSWORD:?EM_BOOTSTRAP_ADMIN_PASSWORD is required}
+      EM_EDGE_TOKEN: ${EM_EDGE_TOKEN:?EM_EDGE_TOKEN is required}
+      EM_WEBHOOK_SECRET: ${EM_WEBHOOK_SECRET:?EM_WEBHOOK_SECRET is required}
+      EM_SEED_DEMO: "false"
+      EM_SYNC_ENABLED: ${EM_SYNC_ENABLED:-false}
+      EM_CONTROL_ROOM_URL: ${EM_CONTROL_ROOM_URL:-https://control-room.invalid}
+      EM_TELEMETRY_RETENTION_DAYS: ${EM_TELEMETRY_RETENTION_DAYS:-730}
+      EM_SENT_OUTBOX_RETENTION_DAYS: ${EM_SENT_OUTBOX_RETENTION_DAYS:-30}
+      EM_BACKUP_ENABLED: ${EM_BACKUP_ENABLED:-true}
+      EM_BACKUP_INTERVAL_HOURS: ${EM_BACKUP_INTERVAL_HOURS:-24}
+      EM_BACKUP_RETENTION_COUNT: ${EM_BACKUP_RETENTION_COUNT:-14}
+      EM_BACKUP_DIRECTORY: /data/backups
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+  edge-web:
+    build:
+      context: apps/web
+      args: {VITE_APP_MODE: edge, VITE_API_URL: /api}
+    environment: {API_UPSTREAM: "edge-api:8000"}
+    depends_on:
+      edge-api: {condition: service_healthy}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+  gateway:
+    image: caddy:2.10-alpine
+    environment:
+      EM_EDGE_HOSTNAME: ${EM_EDGE_HOSTNAME}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/docker/Caddyfile.edge:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [edge-web]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+volumes:
+  caddy-data:
+  caddy-config:

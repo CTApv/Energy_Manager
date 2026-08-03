@@ -52,6 +52,18 @@ password: EnergyDemo!2026
 
 Cambiare password, `EM_SECRET_KEY`, `EM_EDGE_TOKEN`, `EM_WEBHOOK_SECRET` e password PostgreSQL prima di qualunque deployment non locale. Nessun segreto reale è incluso.
 
+## Installazione su impianto cliente
+
+Il deployment cliente è separato dalla demo: non avvia simulatore o Control Room, non crea dispositivi fittizi, richiede tutti i segreti e pubblica soltanto il gateway HTTPS.
+
+```powershell
+.\scripts\new-customer-env.ps1 -Hostname energy-manager.cliente.local
+New-Item -ItemType Directory -Force data | Out-Null
+docker compose -f docker-compose.edge.yml up -d --build
+```
+
+Usare **Sistema → Commissioning** per completare il Site Acceptance Test, creare un backup verificato e rimuovere tutti i blocchi prima della consegna. La procedura completa, incluso RTU e ripristino, è in [docs/commissioning.md](docs/commissioning.md).
+
 ## Verifica del flusso verticale
 
 Il seed crea `CTA Demo`, `Stabilimento Demo`, `EM-DEMO-001`, quattro dispositivi e due alberi distinti. Il polling parte automaticamente ogni 5 secondi:
@@ -119,6 +131,6 @@ Le immagini usano Python 3.13, Node 22 in build e componenti runtime multi-arch 
 
 ## Limiti noti dell'MVP
 
-Il polling implementa Modbus TCP e Modbus RTU; TCP è verificato con il simulatore, mentre RTU richiede ancora collaudo su adattatore RS485/hardware reale e un lock condiviso per porta prima dell'uso industriale. Il catalogo resta intenzionalmente read-only: configurazione, scrittura e reset dei registri del multimetro non sono abilitati. Il simulatore espone controlli per anomalia, reset e quota non attribuita; la disconnessione selettiva del singolo slave e il timeout artificiale sono predisposti nello stato ma non alterano ancora il server. Le pagine amministrative meno centrali usano viste tabellari API; l'editor visuale avanzato e il drag-and-drop sono post-MVP. Il provider Tailscale reale è un confine sicuro intenzionalmente non attivato senza credenziali/autorizzazione.
+Il polling implementa Modbus TCP e Modbus RTU con sessione e lock condivisi per connessione; TCP è verificato con il simulatore, mentre RTU deve essere qualificato sullo specifico adattatore RS485 e sui dispositivi del cliente prima della consegna. Il catalogo resta intenzionalmente read-only: configurazione, scrittura e reset dei registri non sono abilitati. Il simulatore espone controlli per anomalia, reset e quota non attribuita; disconnessione selettiva e timeout artificiale non alterano ancora il server. L'editor catalogo avanzato con undo/redo, gli aggiornamenti OTA firmati e il provider Tailscale reale restano sviluppi successivi; nessuna integrazione reale viene attivata senza credenziali e autorizzazione.
 
 Per dettagli: [architettura](docs/architecture.md) e [backlog](docs/backlog.md).

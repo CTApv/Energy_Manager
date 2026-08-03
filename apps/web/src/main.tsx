@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Activity, AlertTriangle, BarChart3, BookOpen, Boxes, Building2, Cable, CheckCircle2, ChevronRight, CircleGauge, ClipboardCheck, Cloud, Database, Factory, FileClock, Gauge, History, LayoutDashboard, Link2, LogOut, Menu, Network, Pencil, Plus, RefreshCw, Save, Server, Settings, ShieldCheck, Users, Wifi, X } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, BookOpen, Boxes, Building2, Cable, CheckCircle2, ChevronRight, CircleGauge, ClipboardCheck, Cloud, Database, Factory, FileClock, Gauge, History, LayoutDashboard, Link2, LogOut, Menu, Network, Pencil, Plus, RefreshCw, Save, Server, Settings, ShieldCheck, Users, Wifi, Wrench, X } from 'lucide-react'
 import './styles.css'
 import './plant.css'
 import { EdgeOperations } from './operations'
@@ -10,6 +10,7 @@ import { EnergyStudio } from './energy-studio'
 import { HistoryStudio } from './history-studio'
 import { UserAdmin } from './user-admin'
 import { KpiStudio } from './kpi-studio'
+import { CommissioningCenter } from './commissioning'
 
 type AnyData = Record<string, any>
 const mode = (import.meta.env.VITE_APP_MODE || 'edge') as 'edge' | 'control-room'
@@ -20,6 +21,7 @@ const edgeNav = [
   ['__configuration','CONFIGURAZIONE',null], ['plant','Configura impianto',Factory], ['catalog','Libreria dispositivi',BookOpen],
   ['__governance','GOVERNANCE',null], ['compliance','Conformità 4.0 / 5.0',ClipboardCheck], ['sync','Control Room e sync',Cloud],
   ['__system','SISTEMA',null], ['tailscale','Connettività sicura',Wifi], ['users','Utenti e ruoli',Users], ['settings','Impostazioni',Settings], ['diagnostics','Diagnostica',CircleGauge],
+  ['commissioning','Commissioning',Wrench],
 ] as const
 const controlNav = [
   ['dashboard','Dashboard generale',LayoutDashboard], ['customers','Clienti',Building2], ['sites','Siti',Factory],
@@ -35,7 +37,7 @@ async function request(path: string, token?: string, options: RequestInit = {}) 
 }
 
 function Login({onLogin}:{onLogin:(token:string)=>void}) {
-  const [username,setUsername]=useState('admin'), [password,setPassword]=useState('EnergyDemo!2026'), [error,setError]=useState(''), [busy,setBusy]=useState(false)
+  const [username,setUsername]=useState('admin'), [password,setPassword]=useState(''), [error,setError]=useState(''), [busy,setBusy]=useState(false)
   async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{const body=new URLSearchParams({username,password});const res=await fetch(`${apiBase}/auth/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});if(!res.ok)throw new Error('Credenziali non valide');const data=await res.json();localStorage.setItem(`em-token-${mode}`,data.access_token);onLogin(data.access_token)}catch(e:any){setError(e.message)}finally{setBusy(false)}}
   return <main className="login"><section className="login-panel"><div className="brand-mark"><Gauge size={30}/></div><p className="eyebrow">ENERGY MANAGER</p><h1>{mode==='edge'?'Edge operativo':'Control Room'}</h1><p className="muted">Monitoraggio energetico industriale, dalla macchina alla flotta.</p><form onSubmit={submit}><label>Utente<input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/></label>{error&&<p className="error">{error}</p>}<button disabled={busy}>{busy?'Accesso…':'Accedi'}</button></form><p className="login-foot">Ambiente demo · Connessione protetta</p></section><section className="login-art"><div className="orb"></div><div><p className="eyebrow">VISIBILITÀ OPERATIVA</p><h2>L’energia diventa una decisione.</h2><p>Acquisizione locale autonoma, KPI affidabili e supervisione multi-sito.</p></div></section></main>
 }
@@ -55,7 +57,7 @@ function Panel({title,aside,children}:{title:string,aside?:string,children:React
 const endpointMap:Record<string,string>={live:'/telemetry/live',history:'/telemetry/history',communications:'/connections',devices:'/devices',catalog:'/catalog',kpi:'/kpis',alarms:'/alarms',sync:'/sync/status',tailscale:'/tailscale/diagnostics',users:'/users',audit:'/audit',fleet:'/fleet',customers:'/fleet',sites:'/fleet',tree:'/fleet',activations:'/fleet'}
 const titles:Record<string,string>=Object.fromEntries([...(edgeNav as any),...(controlNav as any)].map((x:any)=>[x[0],x[1]]))
 
-function DataPage({page,token}:{page:string,token:string}) {const [data,setData]=useState<any>(null),[error,setError]=useState('');const load=()=>{setError('');request(endpointMap[page]||'/health',token).then(setData).catch(e=>setError(e.message))};useEffect(load,[page,token]);if(page==='plant')return <Plant token={token}/>;if(mode==='edge'&&page==='live')return <EdgeOperations token={token} focus="live"/>;if(mode==='edge'&&page==='history')return <HistoryStudio token={token}/>;if(mode==='edge'&&page==='kpi')return <KpiStudio token={token}/>;if(mode==='edge'&&page==='alarms')return <EdgeOperations token={token} focus="alarms"/>;if(mode==='edge'&&page==='users')return <UserAdmin token={token}/>;if(mode==='edge'&&page==='compliance')return <ComplianceCenter token={token}/>;if(page==='assets')return <Assets token={token}/>;if(page==='fleet')return <><Header title="Flotta Edge" subtitle="Stato aggregato per cliente e sito"/><Fleet token={token}/></>;if(page==='catalog')return <Catalog token={token}/>;return <><Header title={titles[page]||page} subtitle="Vista operativa Energy Manager" action={<button className="icon-button" onClick={load}><RefreshCw size={17}/>Aggiorna</button>}/>{error&&<div className="alert">{error}</div>}<Panel title="Dati"><DataView data={data}/></Panel></>}
+function DataPage({page,token}:{page:string,token:string}) {const [data,setData]=useState<any>(null),[error,setError]=useState('');const load=()=>{setError('');request(endpointMap[page]||'/health',token).then(setData).catch(e=>setError(e.message))};useEffect(load,[page,token]);if(mode==='edge'&&page==='commissioning')return <CommissioningCenter token={token}/>;if(page==='plant')return <Plant token={token}/>;if(mode==='edge'&&page==='live')return <EdgeOperations token={token} focus="live"/>;if(mode==='edge'&&page==='history')return <HistoryStudio token={token}/>;if(mode==='edge'&&page==='kpi')return <KpiStudio token={token}/>;if(mode==='edge'&&page==='alarms')return <EdgeOperations token={token} focus="alarms"/>;if(mode==='edge'&&page==='users')return <UserAdmin token={token}/>;if(mode==='edge'&&page==='compliance')return <ComplianceCenter token={token}/>;if(page==='assets')return <Assets token={token}/>;if(page==='fleet')return <><Header title="Flotta Edge" subtitle="Stato aggregato per cliente e sito"/><Fleet token={token}/></>;if(page==='catalog')return <Catalog token={token}/>;return <><Header title={titles[page]||page} subtitle="Vista operativa Energy Manager" action={<button className="icon-button" onClick={load}><RefreshCw size={17}/>Aggiorna</button>}/>{error&&<div className="alert">{error}</div>}<Panel title="Dati"><DataView data={data}/></Panel></>}
 function DataView({data}:{data:any}) {if(data===null)return <div className="loading">Caricamento…</div>;if(Array.isArray(data)){if(!data.length)return <div className="empty">Nessun dato disponibile</div>;const keys=Object.keys(data[0]).filter(k=>!['password_hash','token_hash','config','definition'].includes(k)).slice(0,8);return <div className="table-wrap"><table><thead><tr>{keys.map(k=><th key={k}>{k.replaceAll('_',' ')}</th>)}</tr></thead><tbody>{data.map((row:any,i:number)=><tr key={row.id||i}>{keys.map(k=><td key={k}>{k==='status'||k==='quality'?<Status value={row[k]}/>:format(row[k])}</td>)}</tr>)}</tbody></table></div>}return <div className="detail-grid">{Object.entries(data||{}).map(([k,v])=><div key={k}><span>{k.replaceAll('_',' ')}</span><strong>{k.includes('status')||k==='quality'?<Status value={v}/>:format(v)}</strong></div>)}</div>}
 function format(v:any){if(v===null||v===undefined)return '—';if(typeof v==='object')return JSON.stringify(v);if(typeof v==='string'&&v.includes('T'))return new Date(v).toLocaleString('it-IT');return String(v)}
 

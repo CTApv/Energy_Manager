@@ -68,17 +68,18 @@ def seed_database(db: Session, settings: Settings) -> None:
     if not db.scalar(select(User).limit(1)):
         db.add_all([Role(name=name) for name in ["platform_admin", "technician", "customer_admin", "operator", "viewer"]])
         db.add(User(username="admin", password_hash=hash_password(settings.demo_admin_password), role="platform_admin"))
-    if settings.mode == "control-room" and not db.scalar(select(Tenant).limit(1)):
+    if settings.seed_demo and settings.mode == "control-room" and not db.scalar(select(Tenant).limit(1)):
         tenant = Tenant(name="CTA Demo", slug="cta-demo")
         db.add(tenant); db.flush()
         site = Site(tenant_id=tenant.id, name="Stabilimento Demo")
         db.add(site); db.flush()
         db.add(Edge(id="00000000-0000-4000-8000-000000000001", site_id=site.id, name="EM-DEMO-001", hostname="em-demo-001", status="offline", token_hash=hash_password(settings.edge_token)))
     definitions = seed_catalog(db, settings.mode == "edge")
-    if settings.mode == "edge" and not db.scalar(select(LocalSite).limit(1)):
-        db.add(LocalSite(name="Stabilimento Demo"))
+    if settings.mode == "edge" and not db.scalar(select(MeasurementDefinition).limit(1)):
         for key, label, unit in SEMANTIC_KEYS:
             db.add(MeasurementDefinition(key=key, label=label, unit=unit))
+    if settings.seed_demo and settings.mode == "edge" and not db.scalar(select(LocalSite).limit(1)):
+        db.add(LocalSite(name="Stabilimento Demo"))
         if "generic-meter-v1" in definitions:
             definition = definitions["generic-meter-v1"]
             profile = db.get(DeviceProfile, definition["id"])
@@ -103,7 +104,7 @@ def seed_database(db: Session, settings: Settings) -> None:
             rule = AlarmRule(name="Potenza generale elevata", kind="measurement_above", config={"measurement_key": "electrical.active_power.total", "threshold": 95}, severity="warning")
             db.add(rule); db.flush()
             db.add(AlarmEvent(rule_id=rule.id, severity="warning", status="open", device_id=devices[0].id, measurement_key="electrical.active_power.total", value=102.4, threshold=95, description="Potenza generale oltre la soglia demo"))
-    if settings.mode == "edge" and not db.scalar(select(KpiDefinition).limit(1)):
+    if settings.seed_demo and settings.mode == "edge" and not db.scalar(select(KpiDefinition).limit(1)):
         db.add_all([
             KpiDefinition(name="Potenza generale entro obiettivo", kind="latest", config={"measurement_key": "electrical.active_power.total", "unit": "kW", "target": 100, "direction": "below"}),
             KpiDefinition(name="Quota produzione FV sulla domanda", kind="ratio", config={"numerator_key": "pv.power.ac_total", "denominator_key": "electrical.active_power.total", "scale": 100, "unit": "%", "target": 30, "direction": "above"}),

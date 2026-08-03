@@ -69,3 +69,33 @@ def evaluate_alarm_rules(db: Session, device: Device, samples: list[TelemetrySam
             event.status = "closed"
             event.closed_at = now
 
+
+def evaluate_device_health(db: Session, device: Device, now: datetime, error: str | None, bad_keys: list[str]) -> None:
+    """Open system alarms after repeated failures and close them automatically on recovery."""
+    states = [
+        ("system.communication.available", bool(error), "Comunicazione Modbus interrotta", error or ""),
+        ("system.data_quality.valid", bool(bad_keys), "Qualità dati degradata", ", ".join(bad_keys[:8])),
+    ]
+    for key, active, title, detail in states:
+        event = db.scalar(select(AlarmEvent).where(
+            AlarmEvent.rule_id.is_(None),
+            AlarmEvent.device_id == device.id,
+            AlarmEvent.measurement_key == key,
+            AlarmEvent.status.in_(["open", "acknowledged"]),
+        ).limit(1))
+        repeated = device.consecutive_errors >= 3
+        if active and repeated and not event:
+            db.add(AlarmEvent(
+                rule_id=None,
+                severity="high" if error else "warning",
+                status="open",
+                opened_at=now,
+                device_id=device.id,
+                measurement_key=key,
+                value=0,
+                threshold=1,
+                description=f"{title} su {device.name}: {detail}"[:1000],
+            ))
+        elif not active and event:
+            event.status = "closed"
+            event.closed_at = now

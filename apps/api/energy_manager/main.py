@@ -14,7 +14,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -22,16 +22,18 @@ from sqlalchemy.orm import Session
 
 from .auth import create_token, current_user, hash_password, require_roles, verify_password
 from .catalog import expand_catalog_document, next_copy_id, parse_profile, validate_profile
+from .commissioning import commissioning_report, validate_connection_config
 from .config import get_settings
 from .db import Base, SessionLocal, engine, get_db
 from .decoder import decode_registers
 from .kpi import counter_delta, unattributed_energy
+from .maintenance import backup_file, create_backup, database_integrity, list_backups, maintenance_loop, run_retention, storage_capacity
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
     Connection, Device, DeviceProfile, Edge, EdgeActivation, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
     RegisterDefinition, Site, SyncOutbox, TelemetrySample, Tenant, User, utcnow,
 )
-from .polling import poll_device, polling_loop
+from .polling import close_clients, poll_device, polling_loop
 from .seed import seed_database
 from .sync import sync_loop, sync_once
 from .tailscale import FakeTailscaleProvider, NetworkAgent, node_dict
@@ -70,12 +72,15 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(polling_loop(stop)))
     if settings.mode == "edge" and settings.sync_enabled:
         tasks.append(asyncio.create_task(sync_loop(stop)))
+    if settings.mode == "edge":
+        tasks.append(asyncio.create_task(maintenance_loop(stop, settings)))
     yield
     stop.set()
     await asyncio.gather(*tasks, return_exceptions=True)
+    close_clients()
 
 
-app = FastAPI(title=f"Energy Manager {settings.mode}", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=f"Energy Manager {settings.mode}", version=settings.release, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Webhook-Signature"])
 
 
@@ -165,7 +170,16 @@ class KpiDefinitionInput(BaseModel):
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "mode": settings.mode, "version": "0.1.0", "time": utcnow()}
+    return {"status": "ok", "mode": settings.mode, "version": settings.release, "environment": settings.environment, "time": utcnow()}
+
+
+@app.get("/api/ready")
+def readiness() -> dict:
+    try:
+        integrity = database_integrity(settings)
+        return {"status": "ready" if integrity == "ok" else "not_ready", "database": integrity, "storage": storage_capacity(settings)}
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={"status": "not_ready", "error": type(exc).__name__})
 
 
 def compliance_readiness(db: Session) -> dict[str, Any]:
@@ -226,7 +240,9 @@ def login(request: Request, form: Annotated[OAuth2PasswordRequestForm, Depends()
     sensitive_rate_limit(request)
     user = db.scalar(select(User).where(User.username == form.username, User.active.is_(True)))
     if not user or not verify_password(form.password, user.password_hash):
+        db.add(AuditEvent(actor=form.username[:100], action="auth.login_failed", target_type="session", target_id=None, details={"source": request.client.host if request.client else "unknown"})); db.commit()
         raise HTTPException(401, "Invalid credentials")
+    db.add(AuditEvent(actor=user.username, action="auth.login", target_type="session", target_id=user.id, details={"source": request.client.host if request.client else "unknown"})); db.commit()
     return {"access_token": create_token(user), "token_type": "bearer", "user": {"username": user.username, "role": user.role}}
 
 
@@ -604,25 +620,27 @@ def connections(user: User = Depends(current_user), db: Session = Depends(get_db
 
 @app.post("/api/connections")
 def create_connection(data: ConnectionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
-    if data.kind not in {"modbus_tcp", "modbus_rtu"}: raise HTTPException(422, "Unsupported connection kind")
-    item = Connection(**data.model_dump()); db.add(item); db.flush()
+    try: config = validate_connection_config(data.kind, data.config)
+    except (ValueError, TypeError) as exc: raise HTTPException(422, str(exc)) from exc
+    item = Connection(name=data.name, kind=data.kind, config=config); db.add(item); db.flush()
     db.add(AuditEvent(actor=user.username, action="connection.create", target_type="connection", target_id=item.id, details={"name": item.name, "kind": item.kind}))
     db.commit(); return as_dict(item)
 
 
 @app.put("/api/connections/{connection_id}")
 def update_connection(connection_id: str, data: ConnectionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
-    if data.kind not in {"modbus_tcp", "modbus_rtu"}: raise HTTPException(422, "Unsupported connection kind")
+    try: config = validate_connection_config(data.kind, data.config)
+    except (ValueError, TypeError) as exc: raise HTTPException(422, str(exc)) from exc
     item = db.get(Connection, connection_id)
     if not item: raise HTTPException(404, "Connection not found")
-    item.name = data.name; item.kind = data.kind; item.config = data.config
+    item.name = data.name; item.kind = data.kind; item.config = config
     item.status = "unknown"; item.last_error = None
     db.add(AuditEvent(actor=user.username, action="connection.update", target_type="connection", target_id=item.id, details={"name": item.name, "kind": item.kind}))
     db.commit(); return as_dict(item)
 
 
 @app.post("/api/connections/{connection_id}/test")
-async def test_connection(connection_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+async def test_connection(connection_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     connection = db.get(Connection, connection_id)
     if not connection: raise HTTPException(404, "Connection not found")
     device = db.scalar(select(Device).where(Device.connection_id == connection_id).limit(1))
@@ -645,6 +663,8 @@ def create_device(data: DeviceInput, user: User = Depends(require_roles("platfor
         raise HTTPException(422, "Unknown connection or profile")
     if connection.kind not in profile.definition.get("protocols", []):
         raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
+    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id).limit(1)):
+        raise HTTPException(409, "Unit ID already configured on this connection")
     item = Device(**data.model_dump()); db.add(item); db.flush()
     db.add(AuditEvent(actor=user.username, action="device.create", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
     db.commit(); return as_dict(item)
@@ -659,6 +679,8 @@ def update_device(device_id: str, data: DeviceInput, user: User = Depends(requir
     if not connection or not profile: raise HTTPException(422, "Unknown connection or profile")
     if connection.kind not in profile.definition.get("protocols", []):
         raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
+    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.id != device_id).limit(1)):
+        raise HTTPException(409, "Unit ID already configured on this connection")
     for key, value in data.model_dump().items(): setattr(item, key, value)
     item.status = "unknown"; item.last_error = None; item.consecutive_errors = 0
     db.add(AuditEvent(actor=user.username, action="device.update", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
@@ -669,11 +691,13 @@ def update_device(device_id: str, data: DeviceInput, user: User = Depends(requir
 def toggle_device(device_id: str, active: bool, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     item = db.get(Device, device_id)
     if not item: raise HTTPException(404, "Device not found")
-    item.active = active; db.commit(); return as_dict(item)
+    item.active = active
+    db.add(AuditEvent(actor=user.username, action="device.active", target_type="device", target_id=item.id, details={"active": active}))
+    db.commit(); return as_dict(item)
 
 
 @app.post("/api/devices/{device_id}/poll")
-async def manual_poll(device_id: str, user: User = Depends(current_user)) -> dict:
+async def manual_poll(device_id: str, user: User = Depends(require_roles("platform_admin", "technician"))) -> dict:
     return {"samples": await poll_device(device_id)}
 
 
@@ -810,14 +834,70 @@ def storage_status(user: User = Depends(current_user), db: Session = Depends(get
     quality_rows = db.execute(select(TelemetrySample.quality, func.count()).group_by(TelemetrySample.quality)).all()
     return {
         "persistence": "local_database",
-        "retention_policy": "explicit_no_automatic_deletion",
+        "retention_policy": f"automatic_{settings.telemetry_retention_days}_days",
         "samples": db.scalar(select(func.count()).select_from(TelemetrySample)) or 0,
         "oldest_sample_at": db.scalar(select(func.min(TelemetrySample.sample_at))),
         "newest_sample_at": db.scalar(select(func.max(TelemetrySample.sample_at))),
         "quality": {quality: count for quality, count in quality_rows},
         "pending_sync_events": db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0,
         "analytics_max_range_days": 365 * 5,
+        "capacity": storage_capacity(settings),
+        "backups": list_backups(settings),
     }
+
+
+@app.get("/api/commissioning")
+def commissioning(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    return commissioning_report(db, settings)
+
+
+@app.post("/api/commissioning/test-all")
+async def commissioning_test_all(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    results = []
+    connections = list(db.scalars(select(Connection).order_by(Connection.name)))
+    for connection in connections:
+        devices = list(db.scalars(select(Device).where(Device.connection_id == connection.id, Device.active.is_(True)).order_by(Device.unit_id)))
+        connection_samples = 0
+        for device in devices:
+            connection_samples += await poll_device(device.id)
+        db.refresh(connection)
+        connection.last_test_at = utcnow()
+        connection.status = "online" if connection_samples else "offline"
+        results.append({"connection_id": connection.id, "name": connection.name, "status": connection.status, "devices": len(devices), "samples": connection_samples})
+    db.add(AuditEvent(actor=user.username, action="commissioning.test_all", target_type="system", target_id=None, details={"connections": len(results), "online": sum(item["status"] == "online" for item in results)}))
+    db.commit()
+    return {"tested_at": utcnow(), "results": results}
+
+
+@app.post("/api/maintenance/backup")
+def create_edge_backup(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    try: manifest = create_backup(settings)
+    except RuntimeError as exc: raise HTTPException(503, str(exc)) from exc
+    db.add(AuditEvent(actor=user.username, action="backup.create", target_type="system", target_id=manifest["file"], details={"sha256": manifest["sha256"], "bytes": manifest["bytes"]}))
+    db.commit()
+    return manifest
+
+
+@app.get("/api/maintenance/backups")
+def backups(user: User = Depends(require_roles("platform_admin", "technician"))) -> list[dict]:
+    return list_backups(settings)
+
+
+@app.get("/api/maintenance/backups/{filename}")
+def download_backup(filename: str, user: User = Depends(require_roles("platform_admin", "technician"))):
+    try: path = backup_file(settings, filename)
+    except (ValueError, FileNotFoundError) as exc: raise HTTPException(404, "Backup not found") from exc
+    return FileResponse(path, filename=path.name, media_type="application/vnd.sqlite3")
+
+
+@app.post("/api/maintenance/retention")
+def execute_retention(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    result = run_retention(settings)
+    db.add(AuditEvent(actor=user.username, action="retention.run", target_type="system", target_id=None, details=result)); db.commit()
+    return result
 
 
 @app.get("/api/kpis")

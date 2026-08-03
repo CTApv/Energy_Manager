@@ -9,7 +9,8 @@ from typing import Any
 from pymodbus.client import AsyncModbusSerialClient, AsyncModbusTcpClient
 from sqlalchemy import select
 
-from .alarms import evaluate_alarm_rules
+from .alarms import evaluate_alarm_rules, evaluate_device_health
+from .config import get_settings
 from .db import SessionLocal
 from .decoder import decode_registers
 from .models import Connection, Device, DeviceProfile, SyncOutbox, TelemetrySample
@@ -23,6 +24,7 @@ _clients: dict[str, Any] = {}
 _client_signatures: dict[str, tuple[Any, ...]] = {}
 _connection_locks: dict[str, asyncio.Lock] = {}
 _device_cycles: dict[str, int] = {}
+settings = get_settings()
 
 
 def _signature(connection: Connection) -> tuple[Any, ...]:
@@ -194,6 +196,20 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
         bad_keys = [item["key"] for item in samples if item.get("quality") == "bad"]
         if error:
             device.status = "offline"; device.last_error = error; device.consecutive_errors += 1
+            health_sample = TelemetrySample(
+                device_id=device.id,
+                measurement_key="system.communication.available",
+                value=0,
+                unit="",
+                sample_at=now,
+                quality="communication_error",
+                error=error[:1000],
+                origin="modbus",
+            )
+            db.add(health_sample); db.flush()
+            if settings.sync_enabled:
+                db.add(SyncOutbox(event_type="telemetry", payload={"sample_id": health_sample.id, "device_id": device.id, "measurement_key": health_sample.measurement_key, "value": 0, "unit": "", "sample_at": now.isoformat(), "received_at": health_sample.received_at.isoformat(), "quality": health_sample.quality, "error": health_sample.error, "origin": health_sample.origin}))
+            evaluate_device_health(db, device, now, error, [])
         else:
             device.status = "degraded" if bad_keys else "online"
             device.last_error = f"DataQualityError: incoherent decoded values for {', '.join(bad_keys[:5])}" if bad_keys else None
@@ -203,8 +219,10 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
             for item in samples:
                 sample = TelemetrySample(device_id=device.id, measurement_key=item["key"], value=float(item["value"]) if isinstance(item["value"], (int, float, bool)) else None, unit=item["unit"], sample_at=now, quality=item.get("quality", "good"), origin="modbus")
                 db.add(sample); db.flush(); persisted_samples.append(sample)
-                db.add(SyncOutbox(event_type="telemetry", payload={"sample_id": sample.id, "device_id": device.id, "measurement_key": sample.measurement_key, "value": sample.value, "unit": sample.unit, "sample_at": sample.sample_at.isoformat(), "received_at": sample.received_at.isoformat(), "quality": sample.quality, "origin": sample.origin}))
+                if settings.sync_enabled:
+                    db.add(SyncOutbox(event_type="telemetry", payload={"sample_id": sample.id, "device_id": device.id, "measurement_key": sample.measurement_key, "value": sample.value, "unit": sample.unit, "sample_at": sample.sample_at.isoformat(), "received_at": sample.received_at.isoformat(), "quality": sample.quality, "origin": sample.origin}))
             evaluate_alarm_rules(db, device, [sample for sample in persisted_samples if sample.quality == "good"], now)
+            evaluate_device_health(db, device, now, None, bad_keys)
         db.commit()
     return len(samples)
 
@@ -218,3 +236,13 @@ async def polling_loop(stop: asyncio.Event) -> None:
             await asyncio.wait_for(stop.wait(), timeout=5)
         except TimeoutError:
             pass
+
+
+def close_clients() -> None:
+    for client in list(_clients.values()):
+        try:
+            client.close()
+        except Exception:
+            pass
+    _clients.clear()
+    _client_signatures.clear()
