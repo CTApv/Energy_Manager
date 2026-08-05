@@ -1,0 +1,80 @@
+name: energy-manager-control-room
+services:
+  control-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: energy_manager
+      POSTGRES_USER: energy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - control-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U energy -d energy_manager"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+    logging: &logging
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+  control-room-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      EM_MODE: control-room
+      EM_ENVIRONMENT: production
+      EM_RELEASE: 0.9.0
+      EM_SECRET_KEY: ${EM_SECRET_KEY:?EM_SECRET_KEY is required}
+      EM_CONTROL_DATABASE_URL: ${EM_CONTROL_DATABASE_URL:?EM_CONTROL_DATABASE_URL is required}
+      EM_CORS_ORIGINS: https://${EM_CONTROL_ROOM_HOSTNAME:?EM_CONTROL_ROOM_HOSTNAME is required}
+      EM_DEMO_ADMIN_PASSWORD: ${EM_BOOTSTRAP_ADMIN_PASSWORD:?EM_BOOTSTRAP_ADMIN_PASSWORD is required}
+      EM_EDGE_TOKEN: ${EM_EDGE_TOKEN:?EM_EDGE_TOKEN is required}
+      EM_WEBHOOK_SECRET: ${EM_WEBHOOK_SECRET:?EM_WEBHOOK_SECRET is required}
+      EM_SEED_DEMO: "false"
+      EM_CONTROL_RAW_RETENTION_DAYS: ${EM_CONTROL_RAW_RETENTION_DAYS:-30}
+      EM_ROLLUP_RETENTION_DAYS: ${EM_ROLLUP_RETENTION_DAYS:-3650}
+      EM_BACKUP_ENABLED: "false"
+    depends_on:
+      control-db: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  control-room-web:
+    build:
+      context: apps/web
+      args: {VITE_APP_MODE: control-room, VITE_API_URL: /api}
+    environment: {API_UPSTREAM: "control-room-api:8000"}
+    depends_on:
+      control-room-api: {condition: service_healthy}
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  gateway:
+    image: caddy:2.10-alpine
+    environment:
+      EM_CONTROL_ROOM_HOSTNAME: ${EM_CONTROL_ROOM_HOSTNAME}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./infrastructure/docker/Caddyfile.control-room:/etc/caddy/Caddyfile:ro
+      - control-caddy-data:/data
+      - control-caddy-config:/config
+    depends_on: [control-room-web]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+volumes:
+  control-data:
+  control-caddy-data:
+  control-caddy-config:

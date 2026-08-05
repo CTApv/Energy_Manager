@@ -7,7 +7,8 @@ services:
     environment:
       EM_MODE: edge
       EM_ENVIRONMENT: production
-      EM_RELEASE: 0.8.0
+      EM_RELEASE: 0.9.0
+      EM_EDGE_ID: ${EM_EDGE_ID:?EM_EDGE_ID is required}
       EM_SECRET_KEY: ${EM_SECRET_KEY:?EM_SECRET_KEY is required}
       EM_EDGE_DATABASE_URL: sqlite:////data/customer-edge.db
       EM_CORS_ORIGINS: https://${EM_EDGE_HOSTNAME:?EM_EDGE_HOSTNAME is required}

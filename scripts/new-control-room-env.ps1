@@ -7,31 +7,25 @@ if (Test-Path -LiteralPath $OutputPath) {
     throw "Il file $OutputPath esiste già. Non verrà sovrascritto."
 }
 
-function New-Secret([int]$Bytes = 48) {
+function New-HexSecret([int]$Bytes = 48) {
     $buffer = New-Object byte[] $Bytes
     $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $generator.GetBytes($buffer) } finally { $generator.Dispose() }
-    return [Convert]::ToBase64String($buffer)
+    return [Convert]::ToHexString($buffer).ToLowerInvariant()
 }
 
+$databasePassword = New-HexSecret 32
 $content = @"
-EM_EDGE_HOSTNAME=$Hostname
-EM_EDGE_ID=$([guid]::NewGuid())
-EM_SECRET_KEY=$(New-Secret)
-EM_EDGE_TOKEN=$(New-Secret)
-EM_WEBHOOK_SECRET=$(New-Secret)
-EM_BOOTSTRAP_ADMIN_PASSWORD=$(New-Secret 24)
-EM_SYNC_ENABLED=false
-EM_CONTROL_ROOM_URL=https://control-room.invalid
-EM_TELEMETRY_RETENTION_DAYS=730
-EM_SENT_OUTBOX_RETENTION_DAYS=30
+EM_CONTROL_ROOM_HOSTNAME=$Hostname
+POSTGRES_PASSWORD=$databasePassword
+EM_CONTROL_DATABASE_URL=postgresql+psycopg://energy:$databasePassword@control-db:5432/energy_manager
+EM_SECRET_KEY=$(New-HexSecret)
+EM_BOOTSTRAP_ADMIN_PASSWORD=$(New-HexSecret 24)
+EM_EDGE_TOKEN=$(New-HexSecret)
+EM_WEBHOOK_SECRET=$(New-HexSecret)
 EM_CONTROL_RAW_RETENTION_DAYS=30
 EM_ROLLUP_RETENTION_DAYS=3650
-EM_BACKUP_ENABLED=true
-EM_BACKUP_INTERVAL_HOURS=24
-EM_BACKUP_RETENTION_COUNT=14
-EM_RTU_DEVICE=/dev/ttyUSB0
 "@
 
 Set-Content -LiteralPath $OutputPath -Value $content -Encoding utf8 -NoNewline
-Write-Host "Creato $OutputPath. Proteggerlo e non inviarlo via e-mail o chat."
+Write-Host "Creato $OutputPath. Conservarlo in un secret store e predisporre il backup PostgreSQL."

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "energy-manager-api"
-version = "0.8.0"
+version = "0.9.0"
 description = "Energy Manager Edge and Control Room API"
 authors = [{ name = "Filippo Lolli", email = "filippoctass@gmail.com" }]
 maintainers = [{ name = "Filippo Lolli", email = "filippoctass@gmail.com" }]
