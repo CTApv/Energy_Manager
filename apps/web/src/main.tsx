@@ -12,6 +12,7 @@ import {
   ChevronRight,
   CircleGauge,
   ClipboardCheck,
+  CalendarRange,
   Cloud,
   Database,
   Factory,
@@ -57,13 +58,14 @@ import { DeviceRemoval } from "./device-removal";
 import { DeviceProvisioningWizard } from "./device-provisioning-wizard";
 import { EnergyContextRail } from "./energy-context-rail";
 import { applyTheme, initializeTheme } from "./theme";
+import { ControlRoomStudio } from "./control-room-studio";
+import { EnergyPlanning } from "./energy-planning";
 
 initializeTheme();
 
 type AnyData = Record<string, any>;
 const mode = (import.meta.env.VITE_APP_MODE || "edge") as
-  | "edge"
-  | "control-room";
+  "edge" | "control-room";
 const apiBase = import.meta.env.VITE_API_URL || "/api";
 
 const edgeNav = [
@@ -71,6 +73,7 @@ const edgeNav = [
   ["dashboard", "Panoramica", LayoutDashboard],
   ["live", "Dispositivi live", Activity],
   ["monitoring", "Consumi e costi", WalletCards],
+  ["planning", "Tariffe e baseline", CalendarRange],
   ["history", "Storico e grafici", History],
   ["kpi", "Obiettivi e KPI", BarChart3],
   ["alarms", "Allarmi", AlertTriangle],
@@ -94,21 +97,13 @@ const controlNav = [
   ["sites", "Siti", Factory],
   ["fleet", "Flotta Edge", Boxes],
   ["tree", "Albero generale", Network],
-  ["catalog", "Catalogo centralizzato", BookOpen],
-  ["kpi", "KPI aggregati", BarChart3],
-  ["alarms", "Allarmi", AlertTriangle],
   ["activations", "Attivazioni", ShieldCheck],
-  ["tailscale", "Gestione Tailscale", Wifi],
   ["audit", "Audit log", FileClock],
   ["users", "Utenti e ruoli", Users],
 ] as const;
 
 type UserRole =
-  | "platform_admin"
-  | "technician"
-  | "customer_admin"
-  | "operator"
-  | "viewer";
+  "platform_admin" | "technician" | "customer_admin" | "operator" | "viewer";
 const everyone: UserRole[] = [
   "platform_admin",
   "technician",
@@ -120,6 +115,7 @@ const pageRoles: Record<string, UserRole[]> = {
   dashboard: everyone,
   live: everyone,
   monitoring: everyone,
+  planning: everyone,
   history: everyone,
   kpi: everyone,
   alarms: everyone,
@@ -298,10 +294,12 @@ function Dashboard({
   token,
   onOpenPlant,
   canManage,
+  role,
 }: {
   token: string;
   onOpenPlant: () => void;
   canManage: boolean;
+  role: string;
 }) {
   if (mode === "edge")
     return (
@@ -316,31 +314,7 @@ function Dashboard({
     request("/dashboard", token).then(setData);
   }, [token]);
   if (mode === "control-room")
-    return (
-      <>
-        <Header
-          title="Dashboard generale"
-          subtitle="Panoramica della piattaforma e della flotta"
-        />
-        <div className="metrics">
-          <Metric label="Clienti" value={data.tenants} />
-          <Metric label="Siti" value={data.sites} tone="blue" />
-          <Metric
-            label="Edge online"
-            value={`${data.online_edges ?? 0}/${data.edges ?? 0}`}
-            tone="amber"
-          />
-          <Metric
-            label="Campioni acquisiti"
-            value={data.samples}
-            tone="purple"
-          />
-        </div>
-        <Panel title="Stato della flotta">
-          <Fleet token={token} embedded />
-        </Panel>
-      </>
-    );
+    return <ControlRoomStudio token={token} page="dashboard" role={role} />;
   const points = data.series || [];
   const poly = points
     .map(
@@ -570,6 +544,8 @@ function DataPage({
         <MonitoringStudio token={token} />
       </div>
     );
+  if (mode === "edge" && page === "planning")
+    return <EnergyPlanning token={token} editable={administrative} />;
   if (mode === "edge" && page === "history")
     return <HistoryStudio token={token} />;
   if (mode === "edge" && page === "kpi")
@@ -586,9 +562,14 @@ function DataPage({
         <EdgeOperations token={token} focus="alarms" />
       </div>
     );
-  if (mode === "edge" && page === "users") return <UserAdmin token={token} />;
+  if (page === "users") return <UserAdmin token={token} />;
   if (mode === "edge" && page === "compliance")
     return <ComplianceCenter token={token} />;
+  if (
+    mode === "control-room" &&
+    ["customers", "sites", "fleet", "tree", "activations"].includes(page)
+  )
+    return <ControlRoomStudio token={token} page={page} role={role} />;
   if (page === "assets") return <Assets token={token} />;
   if (page === "fleet")
     return (
@@ -2057,6 +2038,7 @@ function App() {
             token={token}
             onOpenPlant={() => setPage("plant")}
             canManage={canAccess("plant", me.role)}
+            role={me.role}
           />
         ) : (
           <DataPage

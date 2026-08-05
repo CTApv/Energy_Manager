@@ -53,7 +53,12 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.8.0")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.9.0")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    configuration_version: Mapped[str] = mapped_column(String(80), default="")
+    backlog_count: Mapped[int] = mapped_column(Integer, default=0)
+    disk_free_percent: Mapped[float | None] = mapped_column(Float)
+    inventory: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Role(Base, TimestampMixin):
@@ -195,6 +200,7 @@ class MeasurementBinding(Base, TimestampMixin):
 class TelemetrySample(Base):
     __tablename__ = "telemetry_samples"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    edge_id: Mapped[str | None] = mapped_column(String(36), index=True)
     device_id: Mapped[str] = mapped_column(String(36), index=True)
     measurement_key: Mapped[str] = mapped_column(String(160), index=True)
     value: Mapped[float | None] = mapped_column(Float)
@@ -304,3 +310,75 @@ class IngestedBatch(Base):
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     edge_id: Mapped[str] = mapped_column(String(36), index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    event_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class IngestedEvent(Base):
+    __tablename__ = "ingested_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    edge_id: Mapped[str] = mapped_column(String(36), index=True)
+    batch_id: Mapped[str] = mapped_column(String(100), index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class RemoteDevice(Base, TimestampMixin):
+    __tablename__ = "remote_devices"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    edge_id: Mapped[str] = mapped_column(String(36), index=True)
+    local_device_id: Mapped[str] = mapped_column(String(36))
+    name: Mapped[str] = mapped_column(String(160))
+    category: Mapped[str] = mapped_column(String(60), default="device")
+    manufacturer: Mapped[str] = mapped_column(String(100), default="")
+    model: Mapped[str] = mapped_column(String(100), default="")
+    profile_id: Mapped[str] = mapped_column(String(100), default="")
+    profile_version: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(30), default="unknown")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("edge_id", "local_device_id"),)
+
+
+class TelemetryRollup(Base):
+    __tablename__ = "telemetry_rollups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    edge_id: Mapped[str] = mapped_column(String(36), index=True)
+    device_id: Mapped[str] = mapped_column(String(36), index=True)
+    measurement_key: Mapped[str] = mapped_column(String(160), index=True)
+    resolution: Mapped[str] = mapped_column(String(20), default="1m")
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    good_count: Mapped[int] = mapped_column(Integer, default=0)
+    minimum: Mapped[float | None] = mapped_column(Float)
+    maximum: Mapped[float | None] = mapped_column(Float)
+    average: Mapped[float | None] = mapped_column(Float)
+    last_value: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(30), default="")
+    __table_args__ = (UniqueConstraint("edge_id", "device_id", "measurement_key", "resolution", "bucket_start"),)
+
+
+class EnergyTariff(Base, TimestampMixin):
+    __tablename__ = "energy_tariffs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(160))
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    weekdays: Mapped[list] = mapped_column(JSON, default=lambda: list(range(7)))
+    start_minute: Mapped[int] = mapped_column(Integer, default=0)
+    end_minute: Mapped[int] = mapped_column(Integer, default=1440)
+    import_price_per_kwh: Mapped[float] = mapped_column(Float, default=0.0)
+    export_price_per_kwh: Mapped[float] = mapped_column(Float, default=0.0)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class EnergyBaseline(Base, TimestampMixin):
+    __tablename__ = "energy_baselines"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(160))
+    measurement_key: Mapped[str] = mapped_column(String(160), default="electrical.energy.import_total")
+    device_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    baseline_value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(30), default="kWh")
+    normalization: Mapped[dict] = mapped_column(JSON, default=dict)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)

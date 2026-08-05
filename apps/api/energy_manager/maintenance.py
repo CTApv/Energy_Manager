@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, text
 
 from .config import Settings
 from .db import SessionLocal
-from .models import SyncOutbox, TelemetrySample
+from .models import Edge, IngestedBatch, IngestedEvent, SyncOutbox, TelemetryRollup, TelemetrySample
 
 
 logger = logging.getLogger(__name__)
@@ -97,10 +97,17 @@ def backup_file(settings: Settings, filename: str) -> Path:
 def run_retention(settings: Settings) -> dict:
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
-        telemetry = db.execute(delete(TelemetrySample).where(TelemetrySample.sample_at < now - timedelta(days=settings.telemetry_retention_days))).rowcount
+        raw_days = settings.telemetry_retention_days if settings.mode == "edge" else settings.control_raw_retention_days
+        telemetry = db.execute(delete(TelemetrySample).where(TelemetrySample.sample_at < now - timedelta(days=raw_days))).rowcount
         outbox = db.execute(delete(SyncOutbox).where(SyncOutbox.sent_at.is_not(None), SyncOutbox.sent_at < now - timedelta(days=settings.sent_outbox_retention_days))).rowcount
+        rollups = db.execute(delete(TelemetryRollup).where(TelemetryRollup.bucket_start < now - timedelta(days=settings.rollup_retention_days))).rowcount
+        batches = db.execute(delete(IngestedBatch).where(IngestedBatch.received_at < now - timedelta(days=settings.control_raw_retention_days))).rowcount
+        events = db.execute(delete(IngestedEvent).where(IngestedEvent.received_at < now - timedelta(days=settings.control_raw_retention_days))).rowcount
+        if settings.mode == "control-room":
+            for edge in db.scalars(select(Edge).where(Edge.last_seen_at.is_not(None), Edge.last_seen_at < now - timedelta(minutes=2))):
+                edge.status = "offline"
         db.commit()
-    return {"telemetry_deleted": telemetry or 0, "outbox_deleted": outbox or 0}
+    return {"telemetry_deleted": telemetry or 0, "outbox_deleted": outbox or 0, "rollups_deleted": rollups or 0, "batches_deleted": batches or 0, "events_deleted": events or 0}
 
 
 def database_integrity(settings: Settings) -> str:

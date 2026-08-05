@@ -19,7 +19,7 @@ from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,8 @@ from .auth import create_token, current_user, hash_password, require_roles, veri
 from .catalog import expand_catalog_document, next_copy_id, parse_profile, validate_profile
 from .commissioning import commissioning_report, validate_connection_config, validate_device_connection_config
 from .config import get_settings
+from .contracts import BaselineInput, EdgeInput, IngestBatchEnvelope, SiteInput, TariffInput, TenantInput
+from .control_room import allowed_edge_ids, portfolio
 from .db import Base, SessionLocal, engine, get_db
 from .decoder import decode_registers
 from .energy_reporting import build_energy_report, safe_zone
@@ -35,10 +37,12 @@ from .maintenance import backup_file, create_backup, database_integrity, list_ba
 from .modbus_discovery import discover_modbus, parse_scan_network, resolved_ipv4
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
-    Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergySettings, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
-    RegisterDefinition, Site, SyncOutbox, SystemPreference, TelemetrySample, Tenant, User, utcnow,
+    Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergyBaseline, EnergySettings, EnergyTariff,
+    IngestedBatch, IngestedEvent, KpiDefinition, LocalSite, MeasurementBinding, RegisterDefinition,
+    RemoteDevice, Site, SyncOutbox, SystemPreference, TelemetryRollup, TelemetrySample, Tenant, User, utcnow,
 )
 from .polling import close_clients, poll_device, polling_loop
+from .rollups import update_minute_rollups
 from .seed import seed_database
 from .sync import sync_loop, sync_once
 from .tailscale import FakeTailscaleProvider, NetworkAgent, node_dict
@@ -51,7 +55,8 @@ tailscale_provider = FakeTailscaleProvider()
 
 
 def as_dict(obj: Any) -> dict[str, Any]:
-    return {column.name: getattr(obj, column.name) for column in obj.__table__.columns}
+    sensitive = {"password_hash", "token_hash", "code_hash"}
+    return {column.name: getattr(obj, column.name) for column in obj.__table__.columns if column.name not in sensitive}
 
 
 def webhook_signature_valid(body: bytes, signature: str, secret: str) -> bool:
@@ -78,8 +83,7 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(polling_loop(stop)))
     if settings.mode == "edge" and settings.sync_enabled:
         tasks.append(asyncio.create_task(sync_loop(stop)))
-    if settings.mode == "edge":
-        tasks.append(asyncio.create_task(maintenance_loop(stop, settings)))
+    tasks.append(asyncio.create_task(maintenance_loop(stop, settings)))
     yield
     stop.set()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -92,15 +96,22 @@ app = FastAPI(
     contact={"name": "Filippo Lolli", "email": "filippoctass@gmail.com"},
     lifespan=lifespan,
 )
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Webhook-Signature"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Webhook-Signature", "X-Edge-Signature"])
 
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    edge_only = ("/api/connections", "/api/discovery", "/api/devices", "/api/assets", "/api/bindings", "/api/operations", "/api/energy", "/api/commissioning", "/api/maintenance", "/api/sync")
+    control_only = ("/api/control", "/api/ingest", "/api/fleet", "/api/edges", "/api/activate")
+    if settings.mode == "control-room" and request.url.path.startswith(edge_only):
+        return JSONResponse(status_code=404, content={"detail": "Endpoint available only on an Edge"})
+    if settings.mode == "edge" and request.url.path.startswith(control_only):
+        return JSONResponse(status_code=404, content={"detail": "Endpoint available only on the Control Room"})
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -330,12 +341,12 @@ def compliance_readiness(db: Session) -> dict[str, Any]:
         {"id": "t40_asset_map", "framework": "Transizione 4.0", "area": "Interconnessione", "title": "Identificazione e collocazione dei beni", "status": "ready" if device_count and binding_count else "action", "evidence": f"{device_count} dispositivi, {binding_count} associazioni all’albero", "action": "Associare ogni bene al processo e conservare matricola, schema e relazione tecnica."},
         {"id": "t40_factory_exchange", "framework": "Transizione 4.0", "area": "Integrazione", "title": "Scambio dati con sistemi di fabbrica", "status": "partial", "evidence": "API e sincronizzazione Edge disponibili; acquisizione Modbus intenzionalmente read-only", "action": "Documentare il flusso con MES/ERP/SCADA e verificare i requisiti di interconnessione del bene agevolato."},
         {"id": "t50_monitoring", "framework": "Transizione 5.0", "area": "Energy dashboarding", "title": "Monitoraggio continuo dei consumi", "status": "ready" if sample_count else "action", "evidence": f"{sample_count} campioni normalizzati; alberatura monte/valle e bilancio 24h", "action": "Definire periodo di osservazione, confini di processo e frequenza di misura nel piano di misura."},
-        {"id": "t50_baseline", "framework": "Transizione 5.0", "area": "Risparmio energetico", "title": "Baseline ed EnPI ex ante/ex post", "status": "partial", "evidence": "Delta, KPI e storico disponibili; baseline certificata non ancora congelata", "action": "Aggiungere baseline versionata, variabili di aggiustamento e firma del tecnico abilitato."},
+        {"id": "t50_baseline", "framework": "Transizione 5.0", "area": "Risparmio energetico", "title": "Baseline ed EnPI ex ante/ex post", "status": "partial", "evidence": "Baseline congelabili con periodo, valore e metadati di normalizzazione; scostamento corrente disponibile", "action": "Validare variabili di aggiustamento, metodo e firma del tecnico abilitato."},
         {"id": "t50_certification", "framework": "Transizione 5.0", "area": "Procedura GSE", "title": "Certificazioni e fascicolo agevolativo", "status": "external", "evidence": "Il software può esportare evidenze, non sostituisce certificazione tecnica e contabile", "action": "Coinvolgere certificatore/perito e commercialista secondo la misura applicabile alla data dell’investimento."},
         {"id": "iso50001_enpi", "framework": "ISO 50001 / 50006", "area": "Prestazione energetica", "title": "EnPI, confini e miglioramento", "status": "partial", "evidence": "KPI, gerarchia energetica, quota non attribuita e storico presenti", "action": "Formalizzare baseline, obiettivi, normalizzazione e riesame periodico."},
         {"id": "meter_traceability", "framework": "MID / metrologia", "area": "Misura", "title": "Tracciabilità metrologica", "status": "action", "evidence": "Modello e profilo registri presenti; certificato e scadenza taratura non archiviati", "action": "Registrare matricola, classe, certificato MID/taratura, data verifica e catena di misura."},
         {"id": "cyber_access", "framework": "IEC 62443 / NIS2", "area": "Accesso e audit", "title": "Controllo accessi e tracciabilità", "status": "ready" if user_count and audit_count else "partial", "evidence": f"RBAC attivo, {user_count} utenti, {audit_count} eventi audit", "action": "Integrare MFA/SSO, revisione periodica degli accessi e conservazione audit definita."},
-        {"id": "cra_lifecycle", "framework": "Cyber Resilience Act", "area": "Secure lifecycle", "title": "Vulnerabilità, SBOM e aggiornamenti firmati", "status": "action", "evidence": "Hardening HTTP presente; processo prodotto CRA non ancora documentato", "action": "Introdurre SBOM, vulnerability intake, disclosure, patch SLA, firma e rollback degli aggiornamenti."},
+        {"id": "cra_lifecycle", "framework": "Cyber Resilience Act", "area": "Secure lifecycle", "title": "Vulnerabilità, SBOM e aggiornamenti firmati", "status": "partial", "evidence": "Security policy, threat model, audit dipendenze e hardening HTTP presenti", "action": "Introdurre SBOM, patch SLA contrattuale, firma e rollback degli aggiornamenti."},
         {"id": "data_act", "framework": "EU Data Act", "area": "Portabilità dati", "title": "Accesso ed esportazione dei dati industriali", "status": "partial", "evidence": "API ed export catalogo disponibili", "action": "Aggiungere export self-service completo, policy di portabilità, contratti e metadati machine-readable."},
         {"id": "backup_continuity", "framework": "IEC 62443 / continuità", "area": "Resilienza", "title": "Backup, ripristino e continuità Edge", "status": "action", "evidence": "Buffer offline e retry presenti; backup verificato non configurato", "action": "Automatizzare backup cifrato, test di restore, retention e procedure disaster recovery."},
         {"id": "alarm_management", "framework": "ISA-18.2", "area": "Allarmi", "title": "Allarmi prioritizzati e azionabili", "status": "ready" if rule_count else "partial", "evidence": f"{rule_count} regole attive con priorità, isteresi, acknowledge e audit", "action": "Approvare filosofia allarmi, KPI di carico e revisione periodica delle soglie."},
@@ -769,6 +780,59 @@ def update_energy_settings(data: EnergySettingsInput, user: User = Depends(requi
     db.add(AuditEvent(actor=user.username, action="energy.settings.update", target_type="energy_settings", target_id=configuration.id, details={"currency": data.currency, "timezone": data.timezone, "working_days": data.working_days}))
     db.commit(); db.refresh(configuration)
     return as_dict(configuration)
+
+
+@app.get("/api/energy/tariffs")
+def list_tariffs(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(EnergyTariff).order_by(EnergyTariff.priority.desc(), EnergyTariff.valid_from.desc()))]
+
+
+@app.post("/api/energy/tariffs")
+def create_tariff(data: TariffInput, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    item = EnergyTariff(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="energy.tariff.create", target_type="energy_tariff", target_id=item.id, details={"name": item.name, "valid_from": item.valid_from.isoformat()}))
+    db.commit(); return as_dict(item)
+
+
+@app.delete("/api/energy/tariffs/{tariff_id}")
+def delete_tariff(tariff_id: str, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(EnergyTariff, tariff_id)
+    if not item: raise HTTPException(404, "Tariff not found")
+    db.delete(item); db.add(AuditEvent(actor=user.username, action="energy.tariff.delete", target_type="energy_tariff", target_id=tariff_id, details={"name": item.name})); db.commit()
+    return {"deleted": True, "id": tariff_id}
+
+
+@app.get("/api/energy/baselines")
+def list_baselines(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [as_dict(item) for item in db.scalars(select(EnergyBaseline).order_by(EnergyBaseline.created_at.desc()))]
+
+
+@app.post("/api/energy/baselines")
+def create_baseline(data: BaselineInput, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    item = EnergyBaseline(**data.model_dump()); db.add(item); db.flush()
+    db.add(AuditEvent(actor=user.username, action="energy.baseline.create", target_type="energy_baseline", target_id=item.id, details={"name": item.name, "value": item.baseline_value, "unit": item.unit}))
+    db.commit(); return as_dict(item)
+
+
+@app.get("/api/energy/baselines/{baseline_id}/evaluate")
+def evaluate_baseline(baseline_id: str, period: str = "month", user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    baseline = db.get(EnergyBaseline, baseline_id)
+    if not baseline: raise HTTPException(404, "Baseline not found")
+    report = energy_report_for(period, db)
+    actual = report["energy"]["import_kwh"]
+    variance = actual - baseline.baseline_value if actual is not None else None
+    return {"baseline": as_dict(baseline), "period": report["period"], "actual_value": actual, "variance": variance, "variance_percent": variance / baseline.baseline_value * 100 if variance is not None else None, "quality": report["energy"]["quality"]}
+
+
+@app.delete("/api/energy/baselines/{baseline_id}")
+def delete_baseline(baseline_id: str, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(EnergyBaseline, baseline_id)
+    if not item:
+        raise HTTPException(404, "Baseline not found")
+    db.delete(item)
+    db.add(AuditEvent(actor=user.username, action="energy.baseline.delete", target_type="energy_baseline", target_id=baseline_id, details={"name": item.name}))
+    db.commit()
+    return {"deleted": True, "id": baseline_id}
 
 
 def energy_report_for(period: str, db: Session) -> dict[str, Any]:
@@ -1600,34 +1664,147 @@ async def run_sync(user: User = Depends(require_roles("platform_admin", "technic
 
 
 @app.post("/api/ingest/batches")
-def ingest_batch(payload: dict = Body(...), authorization: str = Header(default=""), db: Session = Depends(get_db)) -> dict:
-    if settings.mode != "control-room": raise HTTPException(404)
-    edge = db.get(Edge, payload.get("edge_id"))
+async def ingest_batch(request: Request, authorization: str = Header(default=""), x_edge_signature: str = Header(default=""), db: Session = Depends(get_db)) -> dict:
+    maximum_bytes = 5_000_000
+    declared_length = request.headers.get("content-length")
+    if declared_length and declared_length.isdigit() and int(declared_length) > maximum_bytes:
+        raise HTTPException(413, "Ingest batch exceeds the 5 MB limit")
+    body = await request.body()
+    if len(body) > maximum_bytes:
+        raise HTTPException(413, "Ingest batch exceeds the 5 MB limit")
+    if not x_edge_signature or not webhook_signature_valid(body, x_edge_signature, settings.webhook_secret):
+        raise HTTPException(401, "Invalid batch signature")
+    try:
+        payload = IngestBatchEnvelope.model_validate_json(body)
+    except ValidationError as exc:
+        raise HTTPException(422, detail=exc.errors()) from exc
+    edge = db.get(Edge, payload.edge_id)
     token = authorization.removeprefix("Bearer ").strip()
     if not edge or not token or not verify_password(token, edge.token_hash): raise HTTPException(401, "Invalid edge token")
-    if batch_already_ingested(db, payload.get("batch_id")): return {"accepted": True, "duplicate": True, "batch_id": payload["batch_id"]}
-    for item in payload.get("samples", []):
-        if not item.get("sample_id"): continue
-        db.add(TelemetrySample(device_id=item["device_id"], measurement_key=item["measurement_key"], value=item.get("value"), unit=item.get("unit", ""), sample_at=datetime.fromisoformat(item["sample_at"]), received_at=datetime.fromisoformat(item["received_at"]), quality=item.get("quality", "good"), origin=f"edge:{edge.id}", source_sample_id=item["sample_id"]))
-    db.add(IngestedBatch(id=payload["batch_id"], edge_id=edge.id)); edge.status = "online"; edge.last_seen_at = utcnow(); db.commit()
-    return {"accepted": True, "duplicate": False, "batch_id": payload["batch_id"], "count": len(payload.get("samples", []))}
+    if batch_already_ingested(db, payload.batch_id): return {"accepted": True, "duplicate": True, "batch_id": payload.batch_id, "count": 0}
+    accepted = []
+    duplicate_events = 0
+    for event in payload.events:
+        if db.get(IngestedEvent, event.event_id):
+            duplicate_events += 1
+            continue
+        db.add(TelemetrySample(
+            edge_id=edge.id, device_id=event.device_id, measurement_key=event.measurement_key,
+            value=event.value, unit=event.unit, sample_at=event.sample_at, received_at=event.received_at,
+            quality=event.quality, error=event.error, origin=f"edge:{edge.id}", source_sample_id=event.sample_id,
+        ))
+        db.add(IngestedEvent(id=event.event_id, edge_id=edge.id, batch_id=payload.batch_id))
+        accepted.append(event)
+    update_minute_rollups(db, edge.id, accepted)
+    for snapshot in payload.status.devices:
+        remote = db.scalar(select(RemoteDevice).where(RemoteDevice.edge_id == edge.id, RemoteDevice.local_device_id == snapshot.id))
+        if not remote:
+            remote = RemoteDevice(edge_id=edge.id, local_device_id=snapshot.id, name=snapshot.name)
+            db.add(remote)
+        for field in ("name", "category", "manufacturer", "model", "profile_id", "profile_version", "status"):
+            setattr(remote, field, getattr(snapshot, field))
+        remote.last_seen_at = utcnow()
+    edge.status = "online"
+    edge.last_seen_at = utcnow()
+    edge.last_sync_at = utcnow()
+    edge.hostname = payload.status.hostname or edge.hostname
+    edge.app_version = payload.status.app_version or edge.app_version
+    edge.configuration_version = payload.status.configuration_version
+    edge.backlog_count = payload.status.backlog_count
+    edge.disk_free_percent = payload.status.disk_free_percent
+    edge.inventory = payload.status.model_dump(mode="json")
+    db.add(IngestedBatch(id=payload.batch_id, edge_id=edge.id, event_count=len(accepted)))
+    db.commit()
+    return {"accepted": True, "duplicate": False, "batch_id": payload.batch_id, "count": len(accepted), "duplicate_events": duplicate_events}
+
+
+@app.get("/api/control/portfolio")
+def control_portfolio(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return portfolio(db, user.role, user.tenant_id)
+
+
+@app.get("/api/control/tenants")
+def control_tenants(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    query = select(Tenant).order_by(Tenant.name)
+    if user.role not in {"platform_admin", "technician"}:
+        if not user.tenant_id: return []
+        query = query.where(Tenant.id == user.tenant_id)
+    return [as_dict(item) for item in db.scalars(query)]
+
+
+@app.post("/api/control/tenants")
+def create_tenant(data: TenantInput, user: User = Depends(require_roles("platform_admin")), db: Session = Depends(get_db)) -> dict:
+    if db.scalar(select(Tenant).where((Tenant.slug == data.slug) | (Tenant.name == data.name))): raise HTTPException(409, "Tenant already exists")
+    item = Tenant(name=data.name, slug=data.slug); db.add(item); db.flush()
+    db.add(AuditEvent(tenant_id=item.id, actor=user.username, action="tenant.create", target_type="tenant", target_id=item.id, details={"name": item.name}))
+    db.commit(); return as_dict(item)
+
+
+@app.get("/api/control/sites")
+def control_sites(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    query = select(Site, Tenant).join(Tenant, Site.tenant_id == Tenant.id).order_by(Tenant.name, Site.name)
+    if user.role not in {"platform_admin", "technician"}:
+        if not user.tenant_id: return []
+        query = query.where(Site.tenant_id == user.tenant_id)
+    return [{**as_dict(site), "tenant": tenant.name} for site, tenant in db.execute(query)]
+
+
+@app.post("/api/control/sites")
+def create_site(data: SiteInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    tenant = db.get(Tenant, data.tenant_id)
+    if not tenant: raise HTTPException(404, "Tenant not found")
+    if not tenant_scope_allowed(user.role, user.tenant_id, tenant.id): raise HTTPException(403, "Tenant outside scope")
+    item = Site(tenant_id=tenant.id, name=data.name); db.add(item); db.flush()
+    db.add(AuditEvent(tenant_id=tenant.id, actor=user.username, action="site.create", target_type="site", target_id=item.id, details={"name": item.name}))
+    db.commit(); return as_dict(item)
+
+
+@app.get("/api/control/edges")
+def control_edges(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    edge_ids = allowed_edge_ids(db, user.role, user.tenant_id)
+    if not edge_ids: return []
+    rows = db.execute(select(Edge, Site, Tenant).join(Site, Edge.site_id == Site.id).join(Tenant, Site.tenant_id == Tenant.id).where(Edge.id.in_(edge_ids)).order_by(Tenant.name, Site.name, Edge.name)).all()
+    return [{**as_dict(edge), "site": site.name, "tenant": tenant.name} for edge, site, tenant in rows]
+
+
+@app.post("/api/control/edges")
+def create_edge(data: EdgeInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    site = db.get(Site, data.site_id)
+    if not site: raise HTTPException(404, "Site not found")
+    if not tenant_scope_allowed(user.role, user.tenant_id, site.tenant_id): raise HTTPException(403, "Site outside scope")
+    token = secrets.token_urlsafe(32)
+    item = Edge(site_id=site.id, name=data.name, hostname=data.hostname, token_hash=hash_password(token), app_version=settings.release)
+    db.add(item); db.flush()
+    db.add(AuditEvent(tenant_id=site.tenant_id, actor=user.username, action="edge.create", target_type="edge", target_id=item.id, details={"name": item.name, "site_id": site.id}))
+    db.commit()
+    return {**as_dict(item), "enrollment_token": token, "token_notice": "Shown once; store it in the Edge secret configuration"}
+
+
+@app.get("/api/control/edges/{edge_id}")
+def control_edge_detail(edge_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    if edge_id not in allowed_edge_ids(db, user.role, user.tenant_id): raise HTTPException(404, "Edge not found")
+    edge, site, tenant = db.execute(select(Edge, Site, Tenant).join(Site, Edge.site_id == Site.id).join(Tenant, Site.tenant_id == Tenant.id).where(Edge.id == edge_id)).one()
+    devices = [as_dict(item) for item in db.scalars(select(RemoteDevice).where(RemoteDevice.edge_id == edge_id).order_by(RemoteDevice.name))]
+    return {**as_dict(edge), "site": site.name, "tenant": tenant.name, "devices": devices}
+
+
+@app.get("/api/control/rollups")
+def control_rollups(edge_id: str, hours: int = 24, measurement_key: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    if edge_id not in allowed_edge_ids(db, user.role, user.tenant_id): raise HTTPException(404, "Edge not found")
+    query = select(TelemetryRollup).where(TelemetryRollup.edge_id == edge_id, TelemetryRollup.bucket_start >= utcnow() - timedelta(hours=min(max(hours, 1), 24 * 366))).order_by(TelemetryRollup.bucket_start)
+    if measurement_key: query = query.where(TelemetryRollup.measurement_key == measurement_key)
+    return [as_dict(item) for item in db.scalars(query.limit(10000))]
 
 
 @app.get("/api/fleet")
 def fleet(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
-    if settings.mode != "control-room": raise HTTPException(404)
-    query = select(Edge, Site, Tenant).join(Site, Edge.site_id == Site.id).join(Tenant, Site.tenant_id == Tenant.id)
-    if user.role not in {"platform_admin", "technician"}:
-        if not user.tenant_id: return []
-        query = query.where(Tenant.id == user.tenant_id)
-    rows = db.execute(query).all()
-    return [{**as_dict(edge), "site": site.name, "tenant": tenant.name} for edge, site, tenant in rows]
+    return control_edges(user, db)
 
 
 @app.post("/api/edges/{edge_id}/activation")
 def create_activation(edge_id: str, request: Request, expires_minutes: int = 30, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     sensitive_rate_limit(request)
-    if not db.get(Edge, edge_id): raise HTTPException(404, "Edge not found")
+    if edge_id not in allowed_edge_ids(db, user.role, user.tenant_id): raise HTTPException(404, "Edge not found")
     code = secrets.token_urlsafe(18)
     item = EdgeActivation(edge_id=edge_id, code_hash=hash_password(code), expires_at=utcnow() + timedelta(minutes=min(expires_minutes, 1440)))
     db.add(item); db.commit(); return {"activation_id": item.id, "code": code, "expires_at": item.expires_at}

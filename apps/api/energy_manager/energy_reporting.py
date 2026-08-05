@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .kpi import counter_delta
 from .models import AssetNode, Device, DeviceProfile, EnergySettings, MeasurementBinding, TelemetrySample
+from .tariffs import price_increments
 
 
 IMPORT_KEY = "electrical.energy.import_total"
@@ -195,8 +196,10 @@ def build_energy_report(db: Session, configuration: EnergySettings, period: str,
     total_consumption = (import_value or 0.0) + (self_consumed or 0.0) if import_value is not None or self_consumed is not None else None
     self_consumption_percent = self_consumed / produced * 100 if produced not in {None, 0} and self_consumed is not None else None
     self_sufficiency_percent = self_consumed / total_consumption * 100 if total_consumption not in {None, 0} and self_consumed is not None else None
-    energy_cost = import_value * configuration.import_price_per_kwh if import_value is not None else None
-    export_revenue = export_value * configuration.export_price_per_kwh if exported["value"] is not None else 0.0
+    priced_import = price_increments(db, imported["increments"], zone, configuration.import_price_per_kwh, "import")
+    priced_export = price_increments(db, exported["increments"], zone, configuration.export_price_per_kwh, "export")
+    energy_cost = priced_import["total"] if import_value is not None else None
+    export_revenue = priced_export["total"] if exported["value"] is not None else 0.0
     net_cost = energy_cost - export_revenue if energy_cost is not None else None
     emissions = import_value * configuration.co2_kg_per_kwh if import_value is not None else None
 
@@ -261,7 +264,7 @@ def build_energy_report(db: Session, configuration: EnergySettings, period: str,
             "quality": imported["quality"], "counter_resets": imported["resets"],
         },
         "power": {**power, "contracted_kw": configuration.contracted_power_kw, "contract_exceeded": power["peak_kw"] > configuration.contracted_power_kw if power["peak_kw"] is not None and configuration.contracted_power_kw is not None else None},
-        "economics": {"currency": configuration.currency, "energy_cost": energy_cost, "export_revenue": export_revenue, "net_cost": net_cost, "projected_month_cost": projected_cost, "monthly_cost_budget": configuration.monthly_cost_budget},
+        "economics": {"currency": configuration.currency, "energy_cost": energy_cost, "export_revenue": export_revenue, "net_cost": net_cost, "projected_month_cost": projected_cost, "monthly_cost_budget": configuration.monthly_cost_budget, "import_tariffs": priced_import["breakdown"], "export_tariffs": priced_export["breakdown"]},
         "environment": {"co2_kg": emissions, "factor_kg_per_kwh": configuration.co2_kg_per_kwh},
         "comparison": {"previous_import_kwh": previous_imported["value"], "energy_change_percent": _change(import_value, previous_imported["value"])},
         "budget": {"monthly_energy_budget_kwh": configuration.monthly_energy_budget_kwh, "projected_month_energy_kwh": projected_energy, "projected_energy_percent": projected_energy / configuration.monthly_energy_budget_kwh * 100 if projected_energy is not None and configuration.monthly_energy_budget_kwh else None},

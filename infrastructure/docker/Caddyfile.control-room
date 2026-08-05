@@ -1,4 +1,4 @@
-{$EM_EDGE_HOSTNAME} {
+{$EM_CONTROL_ROOM_HOSTNAME} {
     tls internal
     encode zstd gzip
     header {
@@ -10,5 +10,5 @@
         Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         -Server
     }
-    reverse_proxy edge-web:80
+    reverse_proxy control-room-web:80
 }

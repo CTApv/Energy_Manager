@@ -1,6 +1,6 @@
 # Motore di monitoraggio energetico
 
-Questo documento descrive le regole applicate dalla release 0.8.0. Serve a rendere verificabili i numeri mostrati in dashboard e a evitare interpretazioni diverse durante il commissioning.
+Questo documento descrive le regole applicate dalla release 0.9.0. Serve a rendere verificabili i numeri mostrati in dashboard e a evitare interpretazioni diverse durante il commissioning.
 
 ## Sorgente autorevole
 

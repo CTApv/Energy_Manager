@@ -10,11 +10,12 @@ class Settings(BaseSettings):
 
     mode: str = "edge"
     environment: str = "development"
-    release: str = "0.8.0"
+    release: str = "0.9.0"
     secret_key: str = "development-only-secret-key-change-me"
     edge_database_url: str = "sqlite:///./data/edge.db"
     control_database_url: str = "sqlite:///./data/control-room.db"
     control_room_url: str = "http://localhost:8001"
+    edge_id: str = "00000000-0000-4000-8000-000000000001"
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
     demo_admin_password: str = "EnergyDemo!2026"
     edge_token: str = "demo-edge-token-change-me"
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     sync_enabled: bool = True
     seed_demo: bool = True
     telemetry_retention_days: int = 730
+    control_raw_retention_days: int = 30
+    rollup_retention_days: int = 3650
     sent_outbox_retention_days: int = 30
     maintenance_interval_seconds: int = 3600
     backup_enabled: bool = True
@@ -57,6 +60,26 @@ class Settings(BaseSettings):
             raise ValueError("telemetry retention must be at least 30 days")
         return value
 
+    @field_validator("control_raw_retention_days")
+    @classmethod
+    def validate_control_retention(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("Control Room raw telemetry retention must be at least one day")
+        return value
+
+    @field_validator("rollup_retention_days")
+    @classmethod
+    def validate_rollup_retention(cls, value: int) -> int:
+        if value < 30:
+            raise ValueError("rollup retention must be at least 30 days")
+        return value
+
+    @field_validator("edge_id")
+    @classmethod
+    def validate_edge_id(cls, value: str) -> str:
+        import uuid
+        return str(uuid.UUID(value))
+
     @model_validator(mode="after")
     def validate_production_secrets(self):
         if self.environment != "production":
@@ -73,6 +96,8 @@ class Settings(BaseSettings):
             invalid.append("secrets_must_be_distinct")
         if self.seed_demo:
             invalid.append("EM_SEED_DEMO")
+        if self.mode == "edge" and self.sync_enabled and self.edge_id == "00000000-0000-4000-8000-000000000001":
+            invalid.append("EM_EDGE_ID")
         if invalid:
             raise ValueError(f"Unsafe production configuration: {', '.join(invalid)}")
         return self

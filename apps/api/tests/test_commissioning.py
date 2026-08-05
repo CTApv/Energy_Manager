@@ -82,5 +82,6 @@ def test_production_accepts_distinct_generated_secrets():
         edge_token="B2!edge-token-2026-production-unique-value-0002",
         webhook_secret="C3!webhook-2026-production-unique-value-0003",
         demo_admin_password="D4!Admin-Commissioning-Password-0004",
+        edge_id="11111111-1111-4111-8111-111111111111",
     )
     assert settings.environment == "production"
