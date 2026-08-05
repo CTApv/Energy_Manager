@@ -147,6 +147,7 @@ class DeviceProvisioningInput(BaseModel):
     device: DeviceInput
     placement: ProvisioningPlacementInput
     measurement_key: str = Field(min_length=3, max_length=160)
+    auto_connection_kind: str | None = Field(default=None, pattern="^modbus_tcp$")
 
 
 class LocalSiteInput(BaseModel):
@@ -1058,11 +1059,33 @@ def create_device(data: DeviceInput, user: User = Depends(require_roles("platfor
 @app.post("/api/provisioning/devices")
 def provision_device(data: DeviceProvisioningInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     """Install a device and place its primary measurement in the energy tree atomically."""
-    connection = db.get(Connection, data.device.connection_id)
     profile = db.get(DeviceProfile, data.device.profile_id)
+    connection_created = False
+    device_input = data.device
+    if data.auto_connection_kind == "modbus_tcp":
+        connection = next(
+            (
+                item
+                for item in db.scalars(select(Connection).where(Connection.kind == "modbus_tcp").order_by(Connection.created_at))
+                if not item.config.get("host")
+            ),
+            None,
+        )
+        if not connection:
+            connection = Connection(
+                name="Rete dispositivi Modbus TCP",
+                kind="modbus_tcp",
+                config={"port": 502, "timeout": 2.0, "retry": 1},
+            )
+            db.add(connection)
+            db.flush()
+            connection_created = True
+        device_input = data.device.model_copy(update={"connection_id": connection.id})
+    else:
+        connection = db.get(Connection, data.device.connection_id)
     if not connection or not profile:
         raise HTTPException(422, "Connessione o driver non trovato")
-    device_values = _normalized_device_values(data.device, connection, profile)
+    device_values = _normalized_device_values(device_input, connection, profile)
     _assert_device_address_available(db, connection, device_values)
 
     available_keys = {
@@ -1122,11 +1145,12 @@ def provision_device(data: DeviceProvisioningInput, user: User = Depends(require
                 "asset_id": asset.id,
                 "asset_created": placement.asset_id is None,
                 "measurement_key": data.measurement_key,
+                "connection_created": connection_created,
             },
         )
     )
     db.commit()
-    return {"device": as_dict(device), "asset": as_dict(asset), "binding": as_dict(binding)}
+    return {"device": as_dict(device), "asset": as_dict(asset), "binding": as_dict(binding), "connection_created": connection_created}
 
 
 @app.put("/api/devices/{device_id}")

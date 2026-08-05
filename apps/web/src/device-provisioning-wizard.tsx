@@ -16,6 +16,7 @@ import {
 import "./device-provisioning-transport.css";
 
 const apiBase = import.meta.env.VITE_API_URL || "/api";
+const automaticTcpId = "__automatic_modbus_tcp__";
 
 async function api(path: string, token: string, options: RequestInit = {}) {
   const response = await fetch(`${apiBase}${path}`, {
@@ -101,11 +102,27 @@ export function DeviceProvisioningWizard({
   );
   const profile = installableProfiles.find((item) => item.id === profileId);
   const definition = profile?.definition || {};
-  const connection = connections.find((item) => item.id === connectionId);
-  const compatibleConnections = connections.filter((item) => {
-    const protocol = item.kind === "modbus_rtu_tcp" ? "modbus_rtu" : item.kind;
-    return definition.protocols?.includes(protocol);
-  });
+  const compatibleConnections = [
+    ...(definition.protocols?.includes("modbus_tcp")
+      ? [
+          {
+            id: automaticTcpId,
+            name: "TCP diretto · configurazione automatica",
+            kind: "modbus_tcp",
+            config: { port: 502 },
+            automatic: true,
+          },
+        ]
+      : []),
+    ...connections.filter((item) => {
+      const protocol =
+        item.kind === "modbus_rtu_tcp" ? "modbus_rtu" : item.kind;
+      return definition.protocols?.includes(protocol);
+    }),
+  ];
+  const connection = compatibleConnections.find(
+    (item) => item.id === connectionId,
+  );
   const filteredProfiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("it");
     if (!needle) return installableProfiles;
@@ -125,7 +142,11 @@ export function DeviceProvisioningWizard({
 
   function chooseProfile(item: any) {
     setProfileId(item.id);
-    setConnectionId("");
+    setConnectionId(
+      item.definition?.protocols?.includes("modbus_tcp")
+        ? automaticTcpId
+        : "",
+    );
     if (!name) setName(item.definition?.model || "");
     if (!assetName) setAssetName(item.definition?.model || "");
   }
@@ -158,7 +179,7 @@ export function DeviceProvisioningWizard({
         method: "POST",
         body: JSON.stringify({
           device: {
-            connection_id: connectionId,
+            connection_id: connectionId === automaticTcpId ? "" : connectionId,
             profile_id: profileId,
             name: name.trim(),
             unit_id: connection?.kind === "modbus_tcp" ? null : Number(unitId),
@@ -176,6 +197,8 @@ export function DeviceProvisioningWizard({
                   category: assetCategory[definition.category] || "asset",
                 },
           measurement_key: measurementKey,
+          auto_connection_kind:
+            connectionId === automaticTcpId ? "modbus_tcp" : null,
         }),
       });
       try {
@@ -321,7 +344,9 @@ export function DeviceProvisioningWizard({
                         <b>{item.name}</b>
                         <small>
                           {item.kind === "modbus_tcp"
-                            ? `IP dedicato per dispositivo · porta ${item.config?.port || 502}`
+                            ? item.automatic
+                              ? "Crea o riutilizza automaticamente la rete TCP"
+                              : `IP dedicato per dispositivo · porta ${item.config?.port || 502}`
                             : item.kind === "modbus_rtu_tcp"
                               ? `Gateway ${item.config?.host}:${item.config?.port}`
                               : `${item.config?.port} · ${item.config?.baud_rate} baud`}

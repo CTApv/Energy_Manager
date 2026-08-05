@@ -20,6 +20,8 @@ Un dispositivo appartiene a un canale di comunicazione e viene collocato su un n
 
 La coppia IP/porta deve essere univoca tra i dispositivi TCP diretti. Lo Unit ID deve invece essere univoco soltanto all'interno del relativo bus RTU o gateway RTU-over-TCP.
 
+Per un dispositivo TCP diretto non è necessario preparare prima un canale: il wizard seleziona **TCP diretto · configurazione automatica**, crea o riutilizza la politica TCP predefinita e salva IP/porta sul dispositivo nella stessa transazione. La creazione manuale dei canali resta disponibile per politiche di timeout/retry dedicate e continua a essere necessaria per definire un bus RTU o un gateway RTU-over-TCP condiviso.
+
 Il pannello richiudibile **Contesto energetico**, disponibile sul lato destro di tutte le viste Edge, mostra l'albero monte-valle, i totali autorevoli, lo stato dei dispositivi e le priorità operative. Non sostituisce l'editor: è una vista live persistente che permette di passare rapidamente ai dati di dettaglio.
 
 La modifica successiva della gerarchia resta disponibile nell'editor drag and drop. In questo modo il modello Siemens, o di qualunque altro costruttore, non modifica la semantica usata dalle dashboard.
