@@ -1,5 +1,8 @@
+import pytest
+
 from energy_manager.models import Connection, Device
-from energy_manager.polling import _client_key, _effective_config, build_read_blocks, sample_quality
+import energy_manager.polling as polling
+from energy_manager.polling import _client_key, _effective_config, _read_with_session_recovery, build_read_blocks, sample_quality
 
 def test_groups_contiguous_registers():
     points=[{"key":"a","function_code":3,"address":100,"register_count":2},{"key":"b","function_code":3,"address":102,"register_count":2},{"key":"c","function_code":4,"address":102,"register_count":1}]
@@ -31,3 +34,37 @@ def test_rtu_over_tcp_shares_gateway_session():
     second = Device(id="slave-b", connection_id=connection.id, profile_id="p", name="B", unit_id=2)
     assert _effective_config(connection, first)["host"] == "192.168.2.20"
     assert _client_key(connection, first) == _client_key(connection, second) == connection.id
+
+
+@pytest.mark.asyncio
+async def test_read_recovers_once_with_a_fresh_session(monkeypatch):
+    connection = Connection(id="tcp", name="TCP", kind="modbus_tcp", config={"port": 502})
+    device = Device(id="meter", connection_id=connection.id, profile_id="p", name="Meter", unit_id=1, config={"host": "192.168.2.108", "port": 502})
+
+    class Client:
+        connected = True
+        closed = False
+
+        async def connect(self):
+            self.connected = True
+            return True
+
+        def close(self):
+            self.closed = True
+
+    stale, fresh = Client(), Client()
+    calls = 0
+
+    async def fake_read(client, *args):
+        nonlocal calls
+        calls += 1
+        if client is stale:
+            raise IOError("transaction mismatch")
+        return "response"
+
+    monkeypatch.setattr(polling, "_read", fake_read)
+    monkeypatch.setattr(polling, "_pooled_client", lambda *_: fresh)
+    polling._clients[device.id] = stale
+    recovered, response = await _read_with_session_recovery(stale, connection, device, 3, 0, 2, 1)
+    assert stale.closed is True
+    assert recovered is fresh and response == "response" and calls == 2
