@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Factory, GripVertical, Pencil, Plus, Save, X } from 'lucide-react'
+import { Factory, GripVertical, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || '/api'
 const blank = { name: '', parent_id: '', category: 'asset', description: '', active: true }
@@ -85,6 +85,14 @@ export function PlantTreeEditor({ token, assets, bindings, onChanged, notify, fa
     } catch (error) { fail(error) }
   }
 
+  async function remove(item:any) {
+    if (!window.confirm(`Rimuovere il nodo “${item.name}”? Prima devono essere rimossi figli e misure associate.`)) return
+    try {
+      await api(`/assets/${item.id}`, token, { method: 'DELETE' })
+      notify('Nodo rimosso'); edit(); await onChanged()
+    } catch (error) { fail(error) }
+  }
+
   const branch = (node: any, depth = 0): React.ReactNode => (
     <React.Fragment key={node.id}>
       <div
@@ -101,6 +109,7 @@ export function PlantTreeEditor({ token, assets, bindings, onChanged, notify, fa
         <span className="tree-edit-label"><b>{node.name}</b><small>{node.category} · {bindings.filter(binding => binding.asset_id === node.id).length} misure</small></span>
         <span className="tree-order"><button onClick={() => void reorder(node, -1)} title="Sposta prima">↑</button><button onClick={() => void reorder(node, 1)} title="Sposta dopo">↓</button></span>
         <button className="row-action" onClick={() => edit(node)} title="Modifica nodo"><Pencil size={14} /></button>
+        <button className="row-action danger" onClick={() => void remove(node)} title="Rimuovi nodo"><Trash2 size={14} /></button>
       </div>
       {ordered.filter(item => item.parent_id === node.id).map(item => branch(item, depth + 1))}
     </React.Fragment>

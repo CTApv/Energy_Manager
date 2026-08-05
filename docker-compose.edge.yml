@@ -7,7 +7,7 @@ services:
     environment:
       EM_MODE: edge
       EM_ENVIRONMENT: production
-      EM_RELEASE: 0.3.0
+      EM_RELEASE: 0.5.0
       EM_SECRET_KEY: ${EM_SECRET_KEY:?EM_SECRET_KEY is required}
       EM_EDGE_DATABASE_URL: sqlite:////data/customer-edge.db
       EM_CORS_ORIGINS: https://${EM_EDGE_HOSTNAME:?EM_EDGE_HOSTNAME is required}
@@ -23,6 +23,7 @@ services:
       EM_BACKUP_INTERVAL_HOURS: ${EM_BACKUP_INTERVAL_HOURS:-24}
       EM_BACKUP_RETENTION_COUNT: ${EM_BACKUP_RETENTION_COUNT:-14}
       EM_BACKUP_DIRECTORY: /data/backups
+      EM_NETWORK_MANAGEMENT_ENABLED: ${EM_NETWORK_MANAGEMENT_ENABLED:-false}
     volumes:
       - ./data:/data
     restart: unless-stopped

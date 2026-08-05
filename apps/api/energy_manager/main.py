@@ -7,6 +7,7 @@ import hmac
 import io
 import json
 import secrets
+import ipaddress
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .auth import create_token, current_user, hash_password, require_roles, verify_password
@@ -31,15 +32,17 @@ from .decoder import decode_registers
 from .energy_reporting import build_energy_report, safe_zone
 from .kpi import counter_delta, unattributed_energy
 from .maintenance import backup_file, create_backup, database_integrity, list_backups, maintenance_loop, run_retention, storage_capacity
+from .modbus_discovery import discover_modbus, parse_scan_network, resolved_ipv4
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
     Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergySettings, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
-    RegisterDefinition, Site, SyncOutbox, TelemetrySample, Tenant, User, utcnow,
+    RegisterDefinition, Site, SyncOutbox, SystemPreference, TelemetrySample, Tenant, User, utcnow,
 )
 from .polling import close_clients, poll_device, polling_loop
 from .seed import seed_database
 from .sync import sync_loop, sync_once
 from .tailscale import FakeTailscaleProvider, NetworkAgent, node_dict
+from .system_inventory import network_interfaces, runtime_summary, serial_ports
 
 
 settings = get_settings()
@@ -185,6 +188,44 @@ class EnergySettingsInput(BaseModel):
     working_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4], min_length=1, max_length=7)
 
 
+class ModbusDiscoveryInput(BaseModel):
+    network: str = Field(default="192.168.2.0/24", min_length=9, max_length=32)
+    ports: list[int] = Field(default_factory=lambda: [502, 5020], min_length=1, max_length=4)
+    unit_from: int = Field(default=1, ge=0, le=247)
+    unit_to: int = Field(default=10, ge=0, le=247)
+    timeout_seconds: float = Field(default=0.35, ge=0.1, le=2)
+    probe_address: int = Field(default=0, ge=0, le=65535)
+
+
+class ModbusDiscoveredInstallInput(BaseModel):
+    host: str = Field(min_length=7, max_length=15)
+    port: int = Field(ge=1, le=65535)
+    unit_id: int = Field(ge=0, le=247)
+    profile_id: str = Field(min_length=1, max_length=100)
+    device_name: str = Field(min_length=1, max_length=160)
+
+
+class DeviceRemovalInput(BaseModel):
+    confirm_name: str = Field(min_length=1, max_length=160)
+    remove_bindings: bool = False
+    purge_history: bool = False
+
+
+class NetworkProfileInput(BaseModel):
+    mode: str = Field(pattern="^(dhcp|static)$")
+    address: str = ""
+    prefix: int = Field(default=24, ge=1, le=32)
+    gateway: str = ""
+    dns: list[str] = Field(default_factory=list, max_length=3)
+
+
+class GeneralPreferencesInput(BaseModel):
+    language: str = Field(default="it", pattern="^(it|en)$")
+    theme: str = Field(default="system", pattern="^(light|dark|system)$")
+    refresh_seconds: int = Field(default=5, ge=2, le=300)
+    compact_numbers: bool = False
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "mode": settings.mode, "version": settings.release, "environment": settings.environment, "time": utcnow()}
@@ -197,6 +238,63 @@ def readiness() -> dict:
         return {"status": "ready" if integrity == "ok" else "not_ready", "database": integrity, "storage": storage_capacity(settings)}
     except Exception as exc:
         return JSONResponse(status_code=503, content={"status": "not_ready", "error": type(exc).__name__})
+
+
+def preference_value(db: Session, key: str, default: dict[str, Any]) -> dict[str, Any]:
+    item = db.get(SystemPreference, key)
+    return item.value if item else default
+
+
+def save_preference(db: Session, key: str, value: dict[str, Any]) -> SystemPreference:
+    item = db.get(SystemPreference, key)
+    if item:
+        item.value = value
+    else:
+        item = SystemPreference(key=key, value=value); db.add(item)
+    return item
+
+
+@app.get("/api/system/overview")
+def system_overview(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    interfaces = network_interfaces()
+    profiles = {item.key.removeprefix("network.interface."): item.value for item in db.scalars(select(SystemPreference).where(SystemPreference.key.like("network.interface.%")))}
+    for interface in interfaces:
+        interface["configured"] = profiles.get(interface["name"])
+    capacity = storage_capacity(settings)
+    capacity.update({"total_gb": round(capacity["total_bytes"] / 1024**3, 1), "used_gb": round(capacity["used_bytes"] / 1024**3, 1), "free_gb": round(capacity["free_bytes"] / 1024**3, 1)})
+    return {
+        "runtime": runtime_summary(), "release": settings.release, "environment": settings.environment,
+        "database": database_integrity(settings), "storage": capacity,
+        "interfaces": interfaces, "serial_ports": serial_ports(),
+        "network_management": {"apply_enabled": settings.network_management_enabled, "profiles_saved": len(profiles)},
+        "preferences": preference_value(db, "general", {"language": "it", "theme": "system", "refresh_seconds": 5, "compact_numbers": False}),
+    }
+
+
+@app.put("/api/system/preferences")
+def update_system_preferences(data: GeneralPreferencesInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    value = data.model_dump(); save_preference(db, "general", value)
+    db.add(AuditEvent(actor=user.username, action="system.preferences.update", target_type="system", target_id="general", details=value))
+    db.commit(); return value
+
+
+@app.put("/api/system/network/{interface_name}")
+def update_network_profile(interface_name: str, data: NetworkProfileInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    detected = {item["name"] for item in network_interfaces()}
+    if interface_name not in detected or not interface_name.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(404, "Interfaccia di rete non rilevata")
+    if data.mode == "static":
+        try:
+            ipaddress.ip_interface(f"{data.address}/{data.prefix}")
+            if data.gateway: ipaddress.ip_address(data.gateway)
+            for server in data.dns: ipaddress.ip_address(server)
+        except ValueError as exc:
+            raise HTTPException(422, "Indirizzo IP, gateway o DNS non valido") from exc
+    value = data.model_dump(); value["pending_apply"] = True
+    save_preference(db, f"network.interface.{interface_name}", value)
+    db.add(AuditEvent(actor=user.username, action="network.profile.update", target_type="network_interface", target_id=interface_name, details={"mode": data.mode, "address": data.address, "pending_apply": True}))
+    db.commit()
+    return {"interface": interface_name, "profile": value, "apply_enabled": settings.network_management_enabled, "message": "Profilo salvato. L'applicazione richiede il servizio host Edge."}
 
 
 def compliance_readiness(db: Session) -> dict[str, Any]:
@@ -302,7 +400,7 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
     by_key: dict[str, TelemetrySample] = {}
     for sample in latest:
         by_key.setdefault(sample.measurement_key, sample)
-    devices = list(db.scalars(select(Device)))
+    devices = list(db.scalars(select(Device).where(Device.status != "removed")))
     open_alarms = db.scalar(select(func.count()).select_from(AlarmEvent).where(AlarmEvent.status.in_(["open", "acknowledged"]))) or 0
     pending = db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0
     power = by_key.get("electrical.active_power.total")
@@ -377,7 +475,7 @@ def plant(user: User = Depends(current_user), db: Session = Depends(get_db)) -> 
     return {
         "site": as_dict(site) if site else None,
         "connections": [as_dict(item) for item in db.scalars(select(Connection).order_by(Connection.name))],
-        "devices": [as_dict(item) for item in db.scalars(select(Device).order_by(Device.name))],
+        "devices": [as_dict(item) for item in db.scalars(select(Device).where(Device.status != "removed").order_by(Device.name))],
         "assets": [as_dict(item) for item in db.scalars(select(AssetNode).order_by(AssetNode.sort_order, AssetNode.name))],
         "bindings": [{**as_dict(binding), "asset_name": asset_name, "device_name": device_name} for binding, asset_name, device_name in bindings],
         "profiles": [as_dict(item) for item in db.scalars(select(DeviceProfile).where(DeviceProfile.valid.is_(True)).order_by(DeviceProfile.id))],
@@ -706,6 +804,56 @@ def connections(user: User = Depends(current_user), db: Session = Depends(get_db
     return [as_dict(item) for item in db.scalars(select(Connection))]
 
 
+@app.post("/api/discovery/modbus")
+async def modbus_discovery(data: ModbusDiscoveryInput, request: Request, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    sensitive_rate_limit(request, limit=5, window_seconds=60)
+    try:
+        network = parse_scan_network(data.network)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if data.unit_to < data.unit_from or data.unit_to - data.unit_from + 1 > 32:
+        raise HTTPException(422, "L'intervallo slave deve contenere da 1 a 32 Unit ID consecutivi")
+    if len(set(data.ports)) != len(data.ports) or any(port < 1 or port > 65535 for port in data.ports):
+        raise HTTPException(422, "Le porte devono essere univoche e comprese tra 1 e 65535")
+    profiles = [{"id": item.id, "definition": item.definition} for item in db.scalars(select(DeviceProfile).where(DeviceProfile.valid.is_(True)))]
+    connections_by_id = {item.id: item for item in db.scalars(select(Connection).where(Connection.kind == "modbus_tcp"))}
+    configured = set()
+    for device in db.scalars(select(Device).where(Device.status != "removed")):
+        connection = connections_by_id.get(device.connection_id)
+        if connection:
+            configured.update((host, int(connection.config.get("port", 502)), device.unit_id) for host in resolved_ipv4(str(connection.config.get("host", ""))))
+    result = await discover_modbus(network, sorted(data.ports), list(range(data.unit_from, data.unit_to + 1)), data.timeout_seconds, data.probe_address, profiles, configured)
+    db.add(AuditEvent(actor=user.username, action="modbus.discovery", target_type="network", target_id=str(network), details={"ports": data.ports, "unit_from": data.unit_from, "unit_to": data.unit_to, "devices_found": result["devices_found"], "elapsed_ms": result["elapsed_ms"]}))
+    db.commit()
+    return result
+
+
+@app.post("/api/discovery/modbus/install")
+def install_discovered_modbus(data: ModbusDiscoveredInstallInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    try:
+        host = str(parse_scan_network(f"{data.host}/32").network_address)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    profile = db.get(DeviceProfile, data.profile_id)
+    if not profile or not profile.valid or "modbus_tcp" not in profile.definition.get("protocols", []):
+        raise HTTPException(422, "Il profilo selezionato non è disponibile per Modbus TCP")
+    connections = list(db.scalars(select(Connection).where(Connection.kind == "modbus_tcp")))
+    connection = next((item for item in connections if host in resolved_ipv4(str(item.config.get("host"))) and int(item.config.get("port", 502)) == data.port), None)
+    created_connection = False
+    if not connection:
+        connection = Connection(name=f"Gateway {host}:{data.port}", kind="modbus_tcp", config={"host": host, "port": data.port, "timeout": 2.0, "retry": 1}, status="online", last_test_at=utcnow())
+        db.add(connection); db.flush(); created_connection = True
+    if db.scalar(select(Device).where(Device.connection_id == connection.id, Device.unit_id == data.unit_id, Device.status != "removed").limit(1)):
+        raise HTTPException(409, "Questo Unit ID è già installato sulla connessione")
+    device = Device(connection_id=connection.id, profile_id=profile.id, name=data.device_name, unit_id=data.unit_id, active=True, status="unknown")
+    db.add(device); db.flush()
+    db.add(AuditEvent(actor=user.username, action="modbus.discovery.install", target_type="device", target_id=device.id, details={"host": host, "port": data.port, "unit_id": data.unit_id, "profile_id": profile.id, "connection_created": created_connection}))
+    db.commit(); db.refresh(device)
+    return {"connection": as_dict(connection), "device": as_dict(device), "connection_created": created_connection}
+
+
 @app.post("/api/connections")
 def create_connection(data: ConnectionInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     try: config = validate_connection_config(data.kind, data.config)
@@ -727,11 +875,21 @@ def update_connection(connection_id: str, data: ConnectionInput, user: User = De
     db.commit(); return as_dict(item)
 
 
+@app.delete("/api/connections/{connection_id}")
+def delete_connection(connection_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(Connection, connection_id)
+    if not item: raise HTTPException(404, "Connessione non trovata")
+    device_count = db.scalar(select(func.count()).select_from(Device).where(Device.connection_id == connection_id, Device.status != "removed")) or 0
+    if device_count: raise HTTPException(409, f"La connessione è usata da {device_count} dispositivi. Rimuovili o spostali prima.")
+    db.add(AuditEvent(actor=user.username, action="connection.delete", target_type="connection", target_id=item.id, details={"name": item.name}))
+    db.delete(item); db.commit(); return {"deleted": connection_id}
+
+
 @app.post("/api/connections/{connection_id}/test")
 async def test_connection(connection_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     connection = db.get(Connection, connection_id)
     if not connection: raise HTTPException(404, "Connection not found")
-    device = db.scalar(select(Device).where(Device.connection_id == connection_id).limit(1))
+    device = db.scalar(select(Device).where(Device.connection_id == connection_id, Device.status != "removed").limit(1))
     if not device: raise HTTPException(409, "No device configured")
     count = await poll_device(device.id); db.refresh(connection)
     connection.last_test_at = utcnow(); connection.status = "online" if count else "offline"; db.commit()
@@ -740,7 +898,7 @@ async def test_connection(connection_id: str, user: User = Depends(require_roles
 
 @app.get("/api/devices")
 def devices(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
-    return [as_dict(item) for item in db.scalars(select(Device).order_by(Device.name))]
+    return [as_dict(item) for item in db.scalars(select(Device).where(Device.status != "removed").order_by(Device.name))]
 
 
 @app.post("/api/devices")
@@ -751,7 +909,7 @@ def create_device(data: DeviceInput, user: User = Depends(require_roles("platfor
         raise HTTPException(422, "Unknown connection or profile")
     if connection.kind not in profile.definition.get("protocols", []):
         raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
-    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id).limit(1)):
+    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.status != "removed").limit(1)):
         raise HTTPException(409, "Unit ID already configured on this connection")
     item = Device(**data.model_dump()); db.add(item); db.flush()
     db.add(AuditEvent(actor=user.username, action="device.create", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
@@ -761,13 +919,13 @@ def create_device(data: DeviceInput, user: User = Depends(require_roles("platfor
 @app.put("/api/devices/{device_id}")
 def update_device(device_id: str, data: DeviceInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     item = db.get(Device, device_id)
-    if not item: raise HTTPException(404, "Device not found")
+    if not item or item.status == "removed": raise HTTPException(404, "Device not found")
     connection = db.get(Connection, data.connection_id)
     profile = db.get(DeviceProfile, data.profile_id)
     if not connection or not profile: raise HTTPException(422, "Unknown connection or profile")
     if connection.kind not in profile.definition.get("protocols", []):
         raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
-    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.id != device_id).limit(1)):
+    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.id != device_id, Device.status != "removed").limit(1)):
         raise HTTPException(409, "Unit ID already configured on this connection")
     for key, value in data.model_dump().items(): setattr(item, key, value)
     item.status = "unknown"; item.last_error = None; item.consecutive_errors = 0
@@ -775,10 +933,44 @@ def update_device(device_id: str, data: DeviceInput, user: User = Depends(requir
     db.commit(); return as_dict(item)
 
 
+@app.get("/api/devices/{device_id}/removal-impact")
+def device_removal_impact(device_id: str, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(Device, device_id)
+    if not item or item.status == "removed": raise HTTPException(404, "Dispositivo non trovato")
+    bindings = db.scalar(select(func.count()).select_from(MeasurementBinding).where(MeasurementBinding.device_id == device_id)) or 0
+    samples = db.scalar(select(func.count()).select_from(TelemetrySample).where(TelemetrySample.device_id == device_id)) or 0
+    alarms = db.scalar(select(func.count()).select_from(AlarmEvent).where(AlarmEvent.device_id == device_id)) or 0
+    rules = sum(1 for rule in db.scalars(select(AlarmRule)) if rule.config.get("device_id") == device_id)
+    return {"id": item.id, "name": item.name, "bindings": bindings, "samples": samples, "alarm_events": alarms, "alarm_rules": rules, "history_preserved_by_default": True}
+
+
+@app.delete("/api/devices/{device_id}")
+def delete_device(device_id: str, data: DeviceRemovalInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    item = db.get(Device, device_id)
+    if not item or item.status == "removed": raise HTTPException(404, "Dispositivo non trovato")
+    if secrets.compare_digest(data.confirm_name.strip(), item.name.strip()) is False:
+        raise HTTPException(422, "Il nome di conferma non corrisponde")
+    bindings = db.scalar(select(func.count()).select_from(MeasurementBinding).where(MeasurementBinding.device_id == device_id)) or 0
+    if bindings and not data.remove_bindings:
+        raise HTTPException(409, f"Il dispositivo ha {bindings} associazioni nell'albero. Conferma la loro rimozione.")
+    if bindings: db.execute(delete(MeasurementBinding).where(MeasurementBinding.device_id == device_id))
+    deleted_samples = 0
+    if data.purge_history:
+        result = db.execute(delete(TelemetrySample).where(TelemetrySample.device_id == device_id)); deleted_samples = result.rowcount or 0
+    disabled_rules = 0
+    for rule in db.scalars(select(AlarmRule)):
+        if rule.config.get("device_id") == device_id and rule.active:
+            rule.active = False; disabled_rules += 1
+    item.active = False; item.status = "removed"; item.last_error = "Rimosso dalla configurazione"
+    db.add(AuditEvent(actor=user.username, action="device.remove", target_type="device", target_id=item.id, details={"name": item.name, "bindings_removed": bindings, "alarm_rules_disabled": disabled_rules, "history_purged": data.purge_history, "samples_removed": deleted_samples}))
+    db.commit()
+    return {"removed": device_id, "bindings_removed": bindings, "history_purged": data.purge_history, "samples_removed": deleted_samples}
+
+
 @app.patch("/api/devices/{device_id}/active")
 def toggle_device(device_id: str, active: bool, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     item = db.get(Device, device_id)
-    if not item: raise HTTPException(404, "Device not found")
+    if not item or item.status == "removed": raise HTTPException(404, "Device not found")
     item.active = active
     db.add(AuditEvent(actor=user.username, action="device.active", target_type="device", target_id=item.id, details={"active": active}))
     db.commit(); return as_dict(item)

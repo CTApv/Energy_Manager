@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     mode: str = "edge"
     environment: str = "development"
-    release: str = "0.3.0"
+    release: str = "0.5.0"
     secret_key: str = "development-only-secret-key-change-me"
     edge_database_url: str = "sqlite:///./data/edge.db"
     control_database_url: str = "sqlite:///./data/control-room.db"
@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     backup_interval_hours: int = 24
     backup_retention_count: int = 14
     backup_directory: str = "./data/backups"
+    network_management_enabled: bool = False
 
     @field_validator("mode")
     @classmethod
