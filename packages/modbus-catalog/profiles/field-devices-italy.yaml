@@ -1,0 +1,118 @@
+bundle_version: 1.0.0
+profiles:
+  - id: schneider-iem3000-modbus
+    manufacturer: Schneider Electric
+    family: Acti9 iEM3000
+    model: iEM3150/3155/3250/3255/3350/3355 Modbus
+    category: multimeter
+    description: Profilo read-only per gli analizzatori Acti9 iEM3000 dotati di Modbus RTU. Le energie import/export sono disponibili sui modelli a quattro quadranti compatibili.
+    version: 1.0.0
+    protocols: [modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 5, unit_id: 1, baud_rate: 19200, parity: even}
+    capabilities:
+      energy_role: bidirectional_meter
+      dashboard: electrical_meter
+      writable: false
+      communication:
+        modbus_rtu: {availability: built_in, note: Porta RS485 sui modelli Modbus della famiglia}
+    documentation:
+      title: Energy meters iEM3100 / iEM3200 / iEM3300 series User Manual, DOCA0005EN-15
+      url: https://download.schneider-electric.com/files?filename=User+guide&p_Doc_Ref=DOCA0005EN
+      verified: '2026-08-05'
+      warning: Verificare il codice A9MEM esatto; i modelli non a quattro quadranti non espongono tutte le energie direzionali.
+    points:
+      - {key: electrical.current.l1, label: Corrente L1, function_code: 3, address: 3000, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+      - {key: electrical.current.l2, label: Corrente L2, function_code: 3, address: 3002, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+      - {key: electrical.current.l3, label: Corrente L3, function_code: 3, address: 3004, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+      - {key: electrical.voltage.l1_n, label: Tensione L1-N, function_code: 3, address: 3028, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+      - {key: electrical.voltage.l2_n, label: Tensione L2-N, function_code: 3, address: 3030, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+      - {key: electrical.voltage.l3_n, label: Tensione L3-N, function_code: 3, address: 3032, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+      - {key: electrical.active_power.l1, label: Potenza attiva L1, function_code: 3, address: 3054, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.active_power.l2, label: Potenza attiva L2, function_code: 3, address: 3056, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.active_power.l3, label: Potenza attiva L3, function_code: 3, address: 3058, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.active_power.total, label: Potenza attiva totale, function_code: 3, address: 3060, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.reactive_power.total, label: Potenza reattiva totale, function_code: 3, address: 3068, register_count: 2, data_type: float32, unit: kVAr, polling_group: fast, group: Potenze}
+      - {key: electrical.apparent_power.total, label: Potenza apparente totale, function_code: 3, address: 3076, register_count: 2, data_type: float32, unit: kVA, polling_group: fast, group: Potenze}
+      - {key: electrical.power_factor.total, label: Fattore di potenza totale, function_code: 3, address: 3084, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità}
+      - {key: electrical.frequency, label: Frequenza, function_code: 3, address: 3110, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Qualità}
+      - {key: electrical.energy.import_total, label: Energia attiva importata, function_code: 3, address: 3204, register_count: 4, data_type: uint64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+      - {key: electrical.energy.export_total, label: Energia attiva esportata, function_code: 3, address: 3208, register_count: 4, data_type: uint64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+
+  - id: huawei-sun2000-lb0-luna
+    manufacturer: Huawei
+    family: SUN2000/SUN5000 LB0
+    model: SUN2000 3–6K-LB0 + LUNA2000
+    category: pv_inverter
+    description: Profilo composito read-only per inverter residenziali LB0; include produzione FV, accumulo LUNA e misure del contatore collegato all'inverter.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 5, unit_id: 0, tcp_port: 6607}
+    capabilities:
+      energy_role: hybrid
+      dashboard: photovoltaic
+      components: [photovoltaic, battery_storage, grid_meter]
+      writable: false
+      communication:
+        modbus_tcp: {availability: built_in, note: Porta predefinita 6607 sulla rete locale/VPN secondo il manuale LB0}
+        modbus_rtu: {availability: built_in, note: RS485 Modbus RTU; verificare indirizzo logico e firmware minimo}
+    documentation:
+      title: SUN2000LB V300R024C00 Modbus Interface Definitions, Issue 04
+      url: https://support.huawei.com/enterprise/en/doc/EDOC1100480329
+      verified: '2026-08-05'
+      warning: Profilo limitato ai modelli LB0 indicati e firmware V300R024C00 o successivo; non applicare automaticamente a L1/M1/MAP0.
+    points:
+      - {key: pv.voltage.string1, label: Tensione stringa FV 1, function_code: 3, address: 32016, register_count: 1, data_type: int16, scale: 0.1, unit: V, polling_group: fast, group: Lato DC}
+      - {key: pv.current.string1, label: Corrente stringa FV 1, function_code: 3, address: 32017, register_count: 1, data_type: int16, scale: 0.01, unit: A, polling_group: fast, group: Lato DC}
+      - {key: pv.voltage.string2, label: Tensione stringa FV 2, function_code: 3, address: 32018, register_count: 1, data_type: int16, scale: 0.1, unit: V, polling_group: fast, group: Lato DC}
+      - {key: pv.current.string2, label: Corrente stringa FV 2, function_code: 3, address: 32019, register_count: 1, data_type: int16, scale: 0.01, unit: A, polling_group: fast, group: Lato DC}
+      - {key: pv.power.dc_total, label: Potenza ingresso FV, function_code: 3, address: 32064, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.voltage.l1_n, label: Tensione rete fase A, function_code: 3, address: 32069, register_count: 1, data_type: uint16, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.current.l1, label: Corrente rete fase A, function_code: 3, address: 32072, register_count: 2, data_type: int32, scale: 0.001, unit: A, polling_group: fast, group: Rete}
+      - {key: pv.power.ac_total, label: Potenza AC prodotta, function_code: 3, address: 32080, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+      - {key: electrical.power_factor.total, label: Fattore di potenza, function_code: 3, address: 32084, register_count: 1, data_type: int16, scale: 0.001, unit: '', polling_group: fast, group: Rete}
+      - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 32085, register_count: 1, data_type: uint16, scale: 0.01, unit: Hz, polling_group: fast, group: Rete}
+      - {key: pv.inverter.efficiency, label: Rendimento inverter, function_code: 3, address: 32086, register_count: 1, data_type: uint16, scale: 0.01, unit: '%', polling_group: normal, group: Prestazioni}
+      - {key: pv.inverter.temperature, label: Temperatura interna, function_code: 3, address: 32087, register_count: 1, data_type: int16, scale: 0.1, unit: °C, polling_group: normal, group: Termica}
+      - {key: device.operating_state, label: Stato inverter, function_code: 3, address: 32089, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: storage.power.active, label: Potenza accumulo, function_code: 3, address: 37001, register_count: 2, data_type: int32, scale: -0.001, unit: kW, polling_group: fast, group: Accumulo}
+      - {key: storage.voltage.dc, label: Tensione bus accumulo, function_code: 3, address: 37003, register_count: 1, data_type: uint16, scale: 0.1, unit: V, polling_group: fast, group: Accumulo}
+      - {key: storage.soc, label: Stato di carica accumulo, function_code: 3, address: 37004, register_count: 1, data_type: uint16, scale: 0.1, unit: '%', polling_group: fast, group: Accumulo}
+      - {key: electrical.active_power.grid, label: Potenza al punto di scambio, function_code: 3, address: 37113, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Contatore}
+      - {key: electrical.energy.export_total, label: Energia immessa in rete, function_code: 3, address: 37119, register_count: 2, data_type: int32, scale: 0.01, unit: kWh, polling_group: normal, group: Contatore}
+      - {key: electrical.energy.import_total, label: Energia prelevata dalla rete, function_code: 3, address: 37121, register_count: 2, data_type: int32, scale: 0.01, unit: kWh, polling_group: normal, group: Contatore}
+
+  - id: abb-terra-ac-wallbox
+    manufacturer: ABB
+    family: Terra AC
+    model: Terra AC Wallbox FW 1.8+
+    category: ev_charger
+    description: Profilo read-only per Terra AC configurata come Modbus Secondary/Server. L'energia esposta dal registro è quella della sessione corrente.
+    version: 1.0.0
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 0
+    defaults: {polling_interval_seconds: 30, unit_id: 1}
+    capabilities:
+      energy_role: consumer
+      dashboard: ev_charging
+      writable: false
+      communication:
+        modbus_tcp: {availability: model_dependent, note: Non disponibile sulle varianti CE senza display; configurare con TerraConfig}
+        modbus_rtu: {availability: built_in, note: RS485 configurabile 4800–115200 baud}
+    documentation:
+      title: ABB Terra AC Charger Modbus Communication v1.11
+      url: https://library.e.abb.com/public/982c2befa2734d259e66d76fa4a7ba77/ABB_Terra_AC_Charger_ModbusCommunication_v1.11.pdf
+      verified: '2026-08-05'
+      warning: ABB raccomanda polling 30–90 s; polling troppo lento rispetto al timeout configurato può arrestare la sessione.
+    points:
+      - {key: device.operating_state, label: Stato di ricarica IEC 61851-1, function_code: 3, address: 16396, register_count: 2, data_type: uint32, unit: '', polling_group: fast, group: Stato}
+      - {key: ev.current.limit, label: Limite corrente applicato, function_code: 3, address: 16398, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+      - {key: electrical.current.l1, label: Corrente di ricarica L1, function_code: 3, address: 16400, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+      - {key: electrical.current.l2, label: Corrente di ricarica L2, function_code: 3, address: 16402, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+      - {key: electrical.current.l3, label: Corrente di ricarica L3, function_code: 3, address: 16404, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+      - {key: electrical.voltage.l1_n, label: Tensione L1, function_code: 3, address: 16406, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.voltage.l2_n, label: Tensione L2, function_code: 3, address: 16408, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.voltage.l3_n, label: Tensione L3, function_code: 3, address: 16410, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+      - {key: ev.power.active, label: Potenza di ricarica, function_code: 3, address: 16412, register_count: 2, data_type: uint32, scale: 0.001, unit: kW, polling_group: fast, group: Sessione}
+      - {key: ev.energy.session, label: Energia erogata nella sessione, function_code: 3, address: 16414, register_count: 2, data_type: uint32, scale: 0.001, unit: kWh, polling_group: normal, group: Sessione}

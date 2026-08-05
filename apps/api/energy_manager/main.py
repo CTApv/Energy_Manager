@@ -365,8 +365,9 @@ def login(request: Request, form: Annotated[OAuth2PasswordRequestForm, Depends()
 
 
 @app.get("/api/me")
-def me(user: Annotated[User, Depends(current_user)]) -> dict:
-    return {"id": user.id, "username": user.username, "role": user.role, "tenant_id": user.tenant_id}
+def me(user: Annotated[User, Depends(current_user)], db: Session = Depends(get_db)) -> dict:
+    ui_preferences = preference_value(db, "general", {"language": "it", "theme": "system", "refresh_seconds": 5, "compact_numbers": False})
+    return {"id": user.id, "username": user.username, "role": user.role, "tenant_id": user.tenant_id, "ui_preferences": ui_preferences}
 
 
 @app.get("/api/dashboard")
@@ -467,7 +468,26 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
 
 @app.get("/api/catalog")
 def catalog_list(user: Annotated[User, Depends(current_user)], db: Annotated[Session, Depends(get_db)]) -> list[dict]:
-    return [as_dict(item) for item in db.scalars(select(CatalogProfile).order_by(CatalogProfile.manufacturer, CatalogProfile.model))]
+    profiles = list(db.scalars(select(CatalogProfile).order_by(CatalogProfile.manufacturer, CatalogProfile.model)))
+    result: list[dict] = []
+    for profile in profiles:
+        version = db.scalar(
+            select(CatalogProfileVersion).where(
+                CatalogProfileVersion.profile_id == profile.id,
+                CatalogProfileVersion.version == profile.latest_version,
+            )
+        )
+        definition = version.definition if version else {}
+        result.append(
+            {
+                **as_dict(profile),
+                "description": definition.get("description", ""),
+                "protocols": definition.get("protocols", []),
+                "capabilities": definition.get("capabilities", {}),
+                "documentation": definition.get("documentation", {}),
+            }
+        )
+    return result
 
 
 @app.get("/api/plant")
