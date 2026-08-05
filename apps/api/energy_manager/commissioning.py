@@ -58,7 +58,7 @@ def _check(identifier: str, title: str, status: str, detail: str, action: str, b
 def commissioning_report(db: Session, settings: Settings) -> dict:
     site = db.scalar(select(LocalSite).limit(1))
     connections = list(db.scalars(select(Connection)))
-    devices = list(db.scalars(select(Device)))
+    devices = list(db.scalars(select(Device).where(Device.status != "removed")))
     active_devices = [item for item in devices if item.active]
     online = [item for item in active_devices if item.status == "online"]
     degraded = [item for item in active_devices if item.status == "degraded"]

@@ -53,7 +53,7 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.4.0")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.5.0")
 
 
 class Role(Base, TimestampMixin):
@@ -92,6 +92,12 @@ class EnergySettings(Base, TimestampMixin):
     workday_start: Mapped[str] = mapped_column(String(5), default="08:00")
     workday_end: Mapped[str] = mapped_column(String(5), default="18:00")
     working_days: Mapped[list] = mapped_column(JSON, default=lambda: [0, 1, 2, 3, 4])
+
+
+class SystemPreference(Base, TimestampMixin):
+    __tablename__ = "system_preferences"
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Connection(Base, TimestampMixin):

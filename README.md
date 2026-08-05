@@ -4,7 +4,7 @@ Energy Manager è una piattaforma open source per il monitoraggio energetico ind
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.4.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e trasforma i contatori in informazioni operative: consumi, potenza, costi, CO₂, budget, confronto temporale, bilancio fotovoltaico e ripartizione per utenza.
+La release `0.5.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e aggiunge un provisioning Edge ordinato per impianto, comunicazioni e amministrazione.
 
 ## Cosa offre
 
@@ -123,7 +123,21 @@ La procedura completa è in [docs/commissioning.md](docs/commissioning.md). La s
 
 Il polling è read-only e supporta Modbus TCP e RTU con sessione condivisa per connessione, serializzazione delle richieste, timeout e retry controllati. In questo modo decine di dispositivi sullo stesso gateway non aprono una connessione TCP indipendente ciascuno.
 
-Il pulsante **Impianto e dispositivi → Trova dispositivi** apre un browser di rete simile ai commissioning tool industriali: scansiona una rete privata fino a `/24`, cerca le porte configurate, interroga fino a 32 Unit ID e usa la funzione Modbus Device Identification quando disponibile. Il modello suggerito deve sempre essere confermato dalla targhetta. La discovery non scrive registri e non installa nulla senza conferma. Dettagli e limiti di sicurezza sono in [docs/modbus-discovery.md](docs/modbus-discovery.md).
+Il pulsante **Comunicazioni → Ricerca Modbus** apre un browser di rete simile ai commissioning tool industriali: scansiona una rete privata fino a `/24`, cerca le porte configurate, interroga fino a 32 Unit ID e usa la funzione Modbus Device Identification quando disponibile. Il modello suggerito deve sempre essere confermato dalla targhetta. La discovery non scrive registri e non installa nulla senza conferma. Dettagli e limiti di sicurezza sono in [docs/modbus-discovery.md](docs/modbus-discovery.md).
+
+## Provisioning dell'impianto Edge
+
+La configurazione è separata in percorsi coerenti con il lavoro del tecnico e dell'Energy Manager:
+
+- **Struttura impianto**: identità del sito, dispositivi installati e albero energetico monte/valle;
+- **Comunicazioni**: canali Modbus TCP, bus Modbus RTU/RS485, rilevamento porte COM e ricerca automatica;
+- **Preferenze**: lingua, aggiornamento UI, calendario energetico, tariffe, potenza contrattuale e budget;
+- **Stato sistema**: release, host, database, storage e capacità locale;
+- **Verifica commissioning**: controllo conclusivo prima della consegna.
+
+La rimozione di un dispositivo è protetta da un'analisi preventiva dell'impatto e dalla conferma del nome. Per impostazione predefinita il dispositivo viene dismesso dalla configurazione attiva, le sue associazioni vengono rimosse solo con consenso esplicito e lo storico rimane conservato. La cancellazione definitiva dei campioni è un'opzione separata e irreversibile.
+
+I profili IPv4 delle schede rilevate possono essere preparati da **Comunicazioni → Rete Edge**. Il profilo viene conservato e marcato come in attesa di applicazione: l'applicazione sul sistema operativo richiede il servizio host Edge e resta disabilitata nei normali container (`EM_NETWORK_MANAGEMENT_ENABLED=false`) per evitare modifiche accidentali all'interfaccia dalla quale è aperta la sessione.
 
 I profili supportano boolean/bit field, interi 16/32/64 bit, float 32/64, ASCII, byte/word order, scala, offset, enum e misure derivate. La validazione blocca funzioni di scrittura, sovrapposizioni e definizioni incoerenti.
 

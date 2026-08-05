@@ -12,7 +12,7 @@ services:
     environment:
       EM_MODE: edge
       EM_ENVIRONMENT: development
-      EM_RELEASE: 0.4.0
+      EM_RELEASE: 0.5.0
       EM_SECRET_KEY: ${EM_SECRET_KEY:-development-only-secret-key-change-me}
       EM_EDGE_DATABASE_URL: sqlite:////data/edge.db
       EM_CONTROL_ROOM_URL: http://control-room-api:8000
@@ -53,7 +53,7 @@ services:
     environment:
       EM_MODE: control-room
       EM_ENVIRONMENT: development
-      EM_RELEASE: 0.4.0
+      EM_RELEASE: 0.5.0
       EM_SECRET_KEY: ${EM_SECRET_KEY:-development-only-secret-key-change-me}
       EM_CONTROL_DATABASE_URL: postgresql+psycopg://energy:${POSTGRES_PASSWORD:-energy}@control-db:5432/energy_manager
       EM_EDGE_TOKEN: ${EM_EDGE_TOKEN:-demo-edge-token-change-me}
