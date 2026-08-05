@@ -22,33 +22,50 @@ const dashboardPresets:Record<string,DashboardPreset>={
   multimeter:{label:'Analizzatore di rete',eyebrow:'QUALITÀ E CONSUMI',icon:CircleGauge,tone:'grid',gauges:[
     {keys:['electrical.active_power.total'],label:'Potenza attiva',min:0,tone:'cyan'},
     {keys:['electrical.voltage.l1n','electrical.voltage.l1_n'],label:'Tensione L1',min:0,max:260,tone:'blue'},
+    {keys:['electrical.voltage.l2n','electrical.voltage.l2_n'],label:'Tensione L2',min:0,max:260,tone:'blue'},
+    {keys:['electrical.voltage.l3n','electrical.voltage.l3_n'],label:'Tensione L3',min:0,max:260,tone:'blue'},
+    {keys:['electrical.current.l1'],label:'Corrente L1',min:0,tone:'violet'},
     {keys:['electrical.power_factor.total'],label:'Fattore di potenza',min:0,max:1,tone:'amber'},
     {keys:['electrical.frequency'],label:'Frequenza',min:45,max:55,tone:'violet'},
-  ],charts:[['electrical.active_power.total','electrical.reactive_power.total','electrical.apparent_power.total'],['electrical.voltage.l1n','electrical.voltage.l1_n','electrical.voltage.l2n','electrical.voltage.l2_n','electrical.voltage.l3n','electrical.voltage.l3_n']]},
+    {keys:['electrical.thd.voltage.l1'],label:'THD tensione L1',min:0,max:10,tone:'amber'},
+  ],charts:[['electrical.active_power.total','electrical.reactive_power.total','electrical.apparent_power.total'],['electrical.voltage.l1n','electrical.voltage.l1_n','electrical.voltage.l2n','electrical.voltage.l2_n','electrical.voltage.l3n','electrical.voltage.l3_n'],['electrical.current.l1','electrical.current.l2','electrical.current.l3'],['electrical.power_factor.l1','electrical.power_factor.l2','electrical.power_factor.l3']]},
   pv_inverter:{label:'Generazione fotovoltaica',eyebrow:'SOLAR PERFORMANCE',icon:Sun,tone:'solar',gauges:[
     {keys:['pv.power.ac_total'],label:'Produzione AC',min:0,tone:'solar'},
     {keys:['pv.inverter.efficiency'],label:'Rendimento',min:0,max:100,tone:'green'},
     {keys:['pv.voltage.dc'],label:'Tensione DC',min:0,max:1200,tone:'blue'},
+    {keys:['pv.current.dc'],label:'Corrente DC',min:0,tone:'cyan'},
     {keys:['pv.inverter.temperature'],label:'Temperatura inverter',min:0,max:100,tone:'amber'},
-  ],charts:[['pv.power.ac_total','pv.power.dc_total'],['pv.voltage.dc','pv.current.dc']]},
+    {keys:['pv.energy.today'],label:'Energia prodotta oggi',min:0,tone:'solar'},
+    {keys:['electrical.power_factor.total'],label:'Fattore di potenza',min:0,max:1,tone:'violet'},
+  ],charts:[['pv.power.ac_total','pv.power.dc_total'],['pv.voltage.string1','pv.voltage.string2'],['pv.current.string1','pv.current.string2'],['electrical.voltage.l1n','electrical.voltage.l2n','electrical.voltage.l3n']]},
   battery_storage:{label:'Sistema di accumulo',eyebrow:'ENERGY STORAGE',icon:BatteryCharging,tone:'storage',gauges:[
     {keys:['storage.soc'],label:'Stato di carica',min:0,max:100,tone:'violet'},
     {keys:['storage.soh'],label:'Stato di salute',min:0,max:100,tone:'green'},
     {keys:['storage.power.active'],label:'Potenza batteria',tone:'cyan'},
     {keys:['storage.temperature'],label:'Temperatura',min:0,max:70,tone:'amber'},
-  ],charts:[['storage.power.active'],['storage.soc']]},
+    {keys:['storage.energy.available'],label:'Energia disponibile',min:0,tone:'green'},
+    {keys:['storage.voltage.dc'],label:'Tensione DC',min:0,max:1000,tone:'blue'},
+    {keys:['storage.current.dc'],label:'Corrente DC',tone:'violet'},
+  ],charts:[['storage.power.active'],['storage.soc'],['storage.voltage.dc'],['storage.temperature','storage.temperature.max','storage.temperature.min']]},
   ev_charger:{label:'Stazione di ricarica',eyebrow:'E-MOBILITY SESSION',icon:CarFront,tone:'ev',gauges:[
     {keys:['ev.power.active'],label:'Potenza di ricarica',min:0,tone:'blue'},
     {keys:['ev.current.limit'],label:'Limite corrente',min:0,max:63,tone:'cyan'},
     {keys:['electrical.current.l1'],label:'Corrente L1',min:0,max:63,tone:'violet'},
+    {keys:['electrical.voltage.l1n'],label:'Tensione L1',min:0,max:260,tone:'blue'},
     {keys:['ev.energy.session'],label:'Energia sessione',min:0,tone:'green'},
-  ],charts:[['ev.power.active'],['electrical.current.l1','electrical.current.l2','electrical.current.l3']]},
+    {keys:['ev.temperature'],label:'Temperatura interna',min:0,max:80,tone:'amber'},
+    {keys:['ev.availability'],label:'Disponibilità',min:0,max:100,tone:'green'},
+  ],charts:[['ev.power.active'],['electrical.current.l1','electrical.current.l2','electrical.current.l3'],['electrical.voltage.l1n','electrical.voltage.l2n','electrical.voltage.l3n'],['ev.energy.session']]},
   environmental_sensor:{label:'Stazione meteo e sensori',eyebrow:'ENVIRONMENTAL DATA',icon:CloudSun,tone:'weather',gauges:[
     {keys:['environment.irradiance.poa'],label:'Irraggiamento',min:0,max:1400,tone:'solar'},
     {keys:['environment.temperature.ambient'],label:'Temperatura ambiente',min:-20,max:60,tone:'amber'},
     {keys:['environment.temperature.module'],label:'Temperatura moduli',min:-20,max:100,tone:'violet'},
     {keys:['environment.wind.speed'],label:'Velocità vento',min:0,max:40,tone:'blue'},
-  ],charts:[['environment.irradiance.poa'],['environment.temperature.ambient','environment.temperature.module']]},
+    {keys:['environment.humidity.relative'],label:'Umidità relativa',min:0,max:100,tone:'cyan'},
+    {keys:['environment.pressure.atmospheric'],label:'Pressione atmosferica',min:950,max:1050,tone:'green'},
+    {keys:['environment.wind.direction'],label:'Direzione vento',min:0,max:360,tone:'violet'},
+    {keys:['environment.wind.gust'],label:'Raffica',min:0,max:50,tone:'blue'},
+  ],charts:[['environment.irradiance.poa','environment.irradiance.ghi'],['environment.temperature.ambient','environment.temperature.module'],['environment.wind.speed','environment.wind.gust'],['environment.humidity.relative']]},
 }
 
 const defaultPreset:DashboardPreset={label:'Dispositivo connesso',eyebrow:'LIVE TELEMETRY',icon:Radio,tone:'generic',gauges:[],charts:[]}
@@ -114,7 +131,7 @@ function SummaryCard({label,value,unit,icon:Icon,tone='green',detail}:{label:str
 
 function MeasurementGrid({measurements,query,setQuery}:{measurements:any[],query:string,setQuery:(value:string)=>void}){
   const groups=useMemo(()=>{const result:Record<string,any[]>={};measurements.filter(item=>(item.label+' '+item.key).toLowerCase().includes(query.toLowerCase())).forEach(item=>(result[item.group||'Misure']??=[]).push(item));return result},[measurements,query])
-  return <section className="ops-section"><header><div><p className="ops-eyebrow">TELEMETRIA NORMALIZZATA</p><h2>Dati live</h2></div><label className="measure-search"><Search/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Cerca misura…" aria-label="Cerca misura"/></label></header>{Object.keys(groups).length?Object.entries(groups).map(([group,items])=><div className="measure-group" key={group}><h3>{group}<span>{items.length}</span></h3><div className="measure-grid">{items.map(item=><article key={item.key}><div><span>{item.label}</span><i className={item.quality==='good'?'good':'bad'} title={item.quality}/></div><strong>{fmt(item.value,Math.abs(item.value)<10?2:1)} <small>{item.unit}</small></strong><p>{time(item.sample_at)} · {item.quality==='good'?'Dato valido':item.quality}</p></article>)}</div></div>):<div className="ops-empty">Nessuna misura corrisponde alla ricerca.</div>}</section>
+  return <section className="ops-section"><header><div><p className="ops-eyebrow">TELEMETRIA NORMALIZZATA</p><h2>Dati live</h2></div><label className="measure-search"><Search/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Cerca misura…" aria-label="Cerca misura"/></label></header>{Object.keys(groups).length?Object.entries(groups).map(([group,items])=><div className="measure-group" key={group}><h3>{group}<span>{items.length}</span></h3><div className="measure-grid">{items.map(item=><article key={item.key}><div><span>{item.label}</span><i className={item.quality==='good'?'good':'bad'} title={item.quality}/></div><strong>{item.display_value||fmt(item.value,Math.abs(item.value)<10?2:1)} <small>{item.unit}</small></strong>{item.display_value&&<em className="raw-state">Codice {fmt(item.value,0)}</em>}<p>{time(item.sample_at)} · {item.quality==='good'?'Dato valido':item.quality}</p></article>)}</div></div>):<div className="ops-empty">Nessuna misura corrisponde alla ricerca.</div>}</section>
 }
 
 function AlarmCenter({token,data,rules,onChanged}:{token:string,data:any,rules:any[],onChanged:()=>void}){

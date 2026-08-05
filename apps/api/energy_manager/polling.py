@@ -230,7 +230,7 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
                 for point in block["points"]:
                     offset = point["address"] - block["start"]
                     raw = values[offset: offset + point["register_count"]]
-                    samples.append({"key": point["key"], "value": decode_registers(raw, point), "unit": point.get("unit", "")})
+                    samples.append({"key": point["key"], "value": decode_registers(raw, point, resolve_enum=False), "unit": point.get("unit", "")})
             values_by_key = {item["key"]: item["value"] for item in samples}
             samples.extend(calculate_derived_points(values_by_key, profile.definition.get("derived_points", [])))
             for item in samples:

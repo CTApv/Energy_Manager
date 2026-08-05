@@ -2,7 +2,32 @@ name: energy-manager
 services:
   simulator:
     build: ./simulators/modbus-simulator
+    environment: {SIMULATOR_PROFILE: meter}
     ports: ["5020:5020", "18090:18090"]
+    restart: unless-stopped
+
+  simulator-pv:
+    build: ./simulators/modbus-simulator
+    environment: {SIMULATOR_PROFILE: pv}
+    ports: ["5021:5020", "18091:18090"]
+    restart: unless-stopped
+
+  simulator-storage:
+    build: ./simulators/modbus-simulator
+    environment: {SIMULATOR_PROFILE: storage}
+    ports: ["5022:5020", "18092:18090"]
+    restart: unless-stopped
+
+  simulator-ev:
+    build: ./simulators/modbus-simulator
+    environment: {SIMULATOR_PROFILE: ev}
+    ports: ["5023:5020", "18093:18090"]
+    restart: unless-stopped
+
+  simulator-weather:
+    build: ./simulators/modbus-simulator
+    environment: {SIMULATOR_PROFILE: weather}
+    ports: ["5024:5020", "18094:18090"]
     restart: unless-stopped
 
   edge-api:
@@ -23,7 +48,7 @@ services:
       EM_BACKUP_DIRECTORY: /data/backups
       EM_CORS_ORIGINS: http://localhost:3000
     volumes: ["edge-data:/data"]
-    depends_on: [simulator]
+    depends_on: [simulator, simulator-pv, simulator-storage, simulator-ev, simulator-weather]
     ports: ["8000:8000"]
     restart: unless-stopped
 

@@ -453,11 +453,20 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
         }
     point_definitions = definition.get("points", []) + definition.get("derived_points", [])
     point_meta = {point["key"]: point for point in point_definitions}
+    def enum_display(key: str, value: Any) -> str | None:
+        enum = point_meta.get(key, {}).get("enum")
+        if not enum or value is None:
+            return None
+        try:
+            return enum.get(str(int(float(value))))
+        except (TypeError, ValueError):
+            return None
     measurements = [{
         "key": key,
         "label": point_meta.get(key, {}).get("label", key),
         "group": point_meta.get(key, {}).get("group", "Misure"),
         "value": sample.value,
+        "display_value": enum_display(key, sample.value),
         "unit": sample.unit,
         "quality": sample.quality,
         "sample_at": sample.sample_at,
@@ -1315,7 +1324,7 @@ def analytics_timeseries(
 ) -> dict:
     hours = min(max(hours, 1), 24 * 365 * 5)
     bucket_minutes = min(max(bucket_minutes, 1), 24 * 60)
-    keys = [key.strip() for key in measurement_keys.split(",") if key.strip()][:8]
+    keys = [key.strip() for key in measurement_keys.split(",") if key.strip()][:24]
     if not keys: raise HTTPException(422, "At least one measurement key is required")
     since = utcnow() - timedelta(hours=hours)
     query = select(TelemetrySample).where(

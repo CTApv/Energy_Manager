@@ -49,6 +49,27 @@ def test_multi_vector_energy_asset_profiles_are_valid():
     assert all(profile is not None for profile in profiles.values())
     assert "pv.power.ac_total" in {point.key for point in profiles["pv_inverter"].points}
     assert "storage.soc" in {point.key for point in profiles["battery_storage"].points}
+    assert {category: len(profile.points) for category, profile in profiles.items()} == {
+        "pv_inverter": 30,
+        "battery_storage": 28,
+        "ev_charger": 25,
+        "environmental_sensor": 22,
+    }
+
+
+def test_complete_meter_simulator_profile_covers_three_phase_quality():
+    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "templates" / "generic-meter-v1.yaml"
+    profile = validate_profile(yaml.safe_load(path.read_text(encoding="utf-8")))[0]
+    assert profile is not None
+    keys = {point.key for point in profile.points}
+    assert len(profile.points) == 57
+    assert {
+        "electrical.voltage.l1n", "electrical.voltage.l2n", "electrical.voltage.l3n",
+        "electrical.current.l1", "electrical.current.l2", "electrical.current.l3",
+        "electrical.power_factor.total", "electrical.power_factor.l1",
+        "electrical.thd.voltage.l1", "electrical.thd.current.l1",
+        "electrical.unbalance.voltage", "electrical.energy.import_total",
+    }.issubset(keys)
 
 
 def test_italian_field_device_catalog_is_valid_and_traceable():

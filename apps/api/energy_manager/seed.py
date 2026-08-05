@@ -151,6 +151,27 @@ def seed_database(db: Session, settings: Settings) -> None:
             rule = AlarmRule(name="Potenza generale elevata", kind="measurement_above", config={"measurement_key": "electrical.active_power.total", "threshold": 95}, severity="warning")
             db.add(rule); db.flush()
             db.add(AlarmEvent(rule_id=rule.id, severity="warning", status="open", device_id=devices[0].id, measurement_key="electrical.active_power.total", value=102.4, threshold=95, description="Potenza generale oltre la soglia demo"))
+    if settings.seed_demo and settings.mode == "edge":
+        # Keep the laboratory ecosystem available on existing development databases too.
+        # A removed demo device is not recreated, preserving the operator's lifecycle choice.
+        demo_assets = [
+            ("generic-pv-inverter-v1", "SIM · Inverter fotovoltaico", "simulator-pv"),
+            ("generic-battery-storage-v1", "SIM · Sistema di accumulo", "simulator-storage"),
+            ("generic-ev-charger-v1", "SIM · Colonnina di ricarica", "simulator-ev"),
+            ("generic-solar-sensor-v1", "SIM · Stazione meteo", "simulator-weather"),
+        ]
+        for profile_id, name, host in demo_assets:
+            if profile_id not in definitions or db.scalar(select(Device).where(Device.name == name).limit(1)):
+                continue
+            connection = Connection(
+                name=f"TCP diretto · {name}", kind="modbus_tcp",
+                config={"port": 5020, "timeout": 2, "retry": 1},
+            )
+            db.add(connection); db.flush()
+            db.add(Device(
+                connection_id=connection.id, profile_id=profile_id, name=name, unit_id=1,
+                config={"host": host, "port": 5020, "protocol_unit_id": 1},
+            ))
     if settings.seed_demo and settings.mode == "edge" and not db.scalar(select(KpiDefinition).limit(1)):
         db.add_all([
             KpiDefinition(name="Potenza generale entro obiettivo", kind="latest", config={"measurement_key": "electrical.active_power.total", "unit": "kW", "target": 100, "direction": "below"}),

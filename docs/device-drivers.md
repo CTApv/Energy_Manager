@@ -16,6 +16,20 @@ templates/
   generic-meter-v1.yaml
 ```
 
+## Banco simulatori multi-dispositivo
+
+La demo Docker avvia cinque slave indipendenti, tutti con Unit ID `1` salvo il multimetro che mantiene anche gli ID `1–4` per le prove di gerarchia:
+
+| Categoria | Host dalla rete Docker | Porta dall’host | Profilo catalogo | Misure |
+|---|---|---:|---|---:|
+| Multimetro | `simulator:5020` | `5020` | `generic-meter-v1` | 57 |
+| Inverter FV | `simulator-pv:5020` | `5021` | `generic-pv-inverter-v1` | 30 |
+| Accumulo | `simulator-storage:5020` | `5022` | `generic-battery-storage-v1` | 28 |
+| Colonnina EV | `simulator-ev:5020` | `5023` | `generic-ev-charger-v1` | 25 |
+| Stazione meteo | `simulator-weather:5020` | `5024` | `generic-solar-sensor-v1` | 22 |
+
+Ogni slave genera valori deterministici, coerenti con tipo, scala e unità del proprio profilo. L’endpoint HTTP di controllo usa le porte `18090–18094` e permette di attivare `anomaly` per verificare stati degradati e allarmi. Questi template servono esclusivamente per test e commissioning da banco.
+
 ## Regola di separazione
 
 Creare un nuovo file quando cambia almeno uno di questi elementi:
