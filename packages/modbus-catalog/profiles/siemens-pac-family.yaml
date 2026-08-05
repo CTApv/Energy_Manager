@@ -1,0 +1,269 @@
+bundle_version: 1.0.0
+point_sets:
+  pac_core:
+    - {key: electrical.voltage.l1n, label: Tensione L1-N, function_code: 3, address: 1, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.voltage.l2n, label: Tensione L2-N, function_code: 3, address: 3, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.voltage.l3n, label: Tensione L3-N, function_code: 3, address: 5, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.voltage.l12, label: Tensione L1-L2, function_code: 3, address: 7, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.voltage.l23, label: Tensione L2-L3, function_code: 3, address: 9, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.voltage.l31, label: Tensione L3-L1, function_code: 3, address: 11, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+    - {key: electrical.current.l1, label: Corrente L1, function_code: 3, address: 13, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+    - {key: electrical.current.l2, label: Corrente L2, function_code: 3, address: 15, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+    - {key: electrical.current.l3, label: Corrente L3, function_code: 3, address: 17, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+    - {key: electrical.apparent_power.l1, label: Potenza apparente L1, function_code: 3, address: 19, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: fast, group: Potenze}
+    - {key: electrical.apparent_power.l2, label: Potenza apparente L2, function_code: 3, address: 21, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: fast, group: Potenze}
+    - {key: electrical.apparent_power.l3, label: Potenza apparente L3, function_code: 3, address: 23, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: fast, group: Potenze}
+    - {key: electrical.active_power.l1, label: Potenza attiva L1, function_code: 3, address: 25, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+    - {key: electrical.active_power.l2, label: Potenza attiva L2, function_code: 3, address: 27, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+    - {key: electrical.active_power.l3, label: Potenza attiva L3, function_code: 3, address: 29, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+    - {key: electrical.reactive_power.l1, label: Potenza reattiva L1, function_code: 3, address: 31, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: fast, group: Potenze}
+    - {key: electrical.reactive_power.l2, label: Potenza reattiva L2, function_code: 3, address: 33, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: fast, group: Potenze}
+    - {key: electrical.reactive_power.l3, label: Potenza reattiva L3, function_code: 3, address: 35, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: fast, group: Potenze}
+    - {key: electrical.power_factor.l1, label: Fattore di potenza L1, function_code: 3, address: 37, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Fattore di potenza}
+    - {key: electrical.power_factor.l2, label: Fattore di potenza L2, function_code: 3, address: 39, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Fattore di potenza}
+    - {key: electrical.power_factor.l3, label: Fattore di potenza L3, function_code: 3, address: 41, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Fattore di potenza}
+    - {key: electrical.frequency, label: Frequenza, function_code: 3, address: 55, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Frequenza}
+    - {key: electrical.voltage.average_ln, label: Tensione media L-N, function_code: 3, address: 57, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Valori medi}
+    - {key: electrical.voltage.average_ll, label: Tensione media L-L, function_code: 3, address: 59, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Valori medi}
+    - {key: electrical.current.average, label: Corrente media, function_code: 3, address: 61, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Valori medi}
+    - {key: electrical.apparent_power.total, label: Potenza apparente totale, function_code: 3, address: 63, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: fast, group: Potenze}
+    - {key: electrical.active_power.total, label: Potenza attiva totale, function_code: 3, address: 65, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+    - {key: electrical.reactive_power.total, label: Potenza reattiva totale, function_code: 3, address: 67, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: fast, group: Potenze}
+    - {key: electrical.power_factor.total, label: Fattore di potenza totale, function_code: 3, address: 69, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Fattore di potenza}
+  pac_quality:
+    - {key: electrical.thd.voltage.l1, label: THD tensione L1, function_code: 3, address: 43, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.thd.voltage.l2, label: THD tensione L2, function_code: 3, address: 45, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.thd.voltage.l3, label: THD tensione L3, function_code: 3, address: 47, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.thd.current.l1, label: THD corrente L1, function_code: 3, address: 49, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.thd.current.l2, label: THD corrente L2, function_code: 3, address: 51, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.thd.current.l3, label: THD corrente L3, function_code: 3, address: 53, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.unbalance.voltage, label: Squilibrio ampiezza tensione, function_code: 3, address: 71, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+    - {key: electrical.unbalance.current, label: Squilibrio ampiezza corrente, function_code: 3, address: 73, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità energia}
+  pac_extrema:
+    - {key: electrical.voltage.l1n.max, label: Tensione massima L1-N, function_code: 3, address: 75, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l2n.max, label: Tensione massima L2-N, function_code: 3, address: 77, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l3n.max, label: Tensione massima L3-N, function_code: 3, address: 79, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l12.max, label: Tensione massima L1-L2, function_code: 3, address: 81, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l23.max, label: Tensione massima L2-L3, function_code: 3, address: 83, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l31.max, label: Tensione massima L3-L1, function_code: 3, address: 85, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.current.l1.max, label: Corrente massima L1, function_code: 3, address: 87, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+    - {key: electrical.current.l2.max, label: Corrente massima L2, function_code: 3, address: 89, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+    - {key: electrical.current.l3.max, label: Corrente massima L3, function_code: 3, address: 91, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+    - {key: electrical.apparent_power.l1.max, label: Potenza apparente massima L1, function_code: 3, address: 93, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Massimi}
+    - {key: electrical.apparent_power.l2.max, label: Potenza apparente massima L2, function_code: 3, address: 95, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Massimi}
+    - {key: electrical.apparent_power.l3.max, label: Potenza apparente massima L3, function_code: 3, address: 97, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Massimi}
+    - {key: electrical.active_power.l1.max, label: Potenza attiva massima L1, function_code: 3, address: 99, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Massimi}
+    - {key: electrical.active_power.l2.max, label: Potenza attiva massima L2, function_code: 3, address: 101, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Massimi}
+    - {key: electrical.active_power.l3.max, label: Potenza attiva massima L3, function_code: 3, address: 103, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Massimi}
+    - {key: electrical.reactive_power.l1.max, label: Potenza reattiva massima L1, function_code: 3, address: 105, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Massimi}
+    - {key: electrical.reactive_power.l2.max, label: Potenza reattiva massima L2, function_code: 3, address: 107, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Massimi}
+    - {key: electrical.reactive_power.l3.max, label: Potenza reattiva massima L3, function_code: 3, address: 109, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Massimi}
+    - {key: electrical.power_factor.l1.max, label: Fattore di potenza massimo L1, function_code: 3, address: 111, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Massimi}
+    - {key: electrical.power_factor.l2.max, label: Fattore di potenza massimo L2, function_code: 3, address: 113, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Massimi}
+    - {key: electrical.power_factor.l3.max, label: Fattore di potenza massimo L3, function_code: 3, address: 115, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.voltage.l1.max, label: THD tensione massimo L1, function_code: 3, address: 117, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.voltage.l2.max, label: THD tensione massimo L2, function_code: 3, address: 119, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.voltage.l3.max, label: THD tensione massimo L3, function_code: 3, address: 121, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.current.l1.max, label: THD corrente massimo L1, function_code: 3, address: 123, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.current.l2.max, label: THD corrente massimo L2, function_code: 3, address: 125, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.thd.current.l3.max, label: THD corrente massimo L3, function_code: 3, address: 127, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Massimi}
+    - {key: electrical.frequency.max, label: Frequenza massima, function_code: 3, address: 129, register_count: 2, data_type: float32, unit: Hz, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.average_ln.max, label: Tensione media L-N massima, function_code: 3, address: 131, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.average_ll.max, label: Tensione media L-L massima, function_code: 3, address: 133, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Massimi}
+    - {key: electrical.current.average.max, label: Corrente media massima, function_code: 3, address: 135, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+    - {key: electrical.apparent_power.total.max, label: Potenza apparente totale massima, function_code: 3, address: 137, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Massimi}
+    - {key: electrical.active_power.total.max, label: Potenza attiva totale massima, function_code: 3, address: 139, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Massimi}
+    - {key: electrical.reactive_power.total.max, label: Potenza reattiva totale massima, function_code: 3, address: 141, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Massimi}
+    - {key: electrical.power_factor.total.max, label: Fattore di potenza totale massimo, function_code: 3, address: 143, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Massimi}
+    - {key: electrical.voltage.l1n.min, label: Tensione minima L1-N, function_code: 3, address: 145, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.l2n.min, label: Tensione minima L2-N, function_code: 3, address: 147, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.l3n.min, label: Tensione minima L3-N, function_code: 3, address: 149, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.l12.min, label: Tensione minima L1-L2, function_code: 3, address: 151, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.l23.min, label: Tensione minima L2-L3, function_code: 3, address: 153, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.l31.min, label: Tensione minima L3-L1, function_code: 3, address: 155, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.current.l1.min, label: Corrente minima L1, function_code: 3, address: 157, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Minimi}
+    - {key: electrical.current.l2.min, label: Corrente minima L2, function_code: 3, address: 159, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Minimi}
+    - {key: electrical.current.l3.min, label: Corrente minima L3, function_code: 3, address: 161, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Minimi}
+    - {key: electrical.apparent_power.l1.min, label: Potenza apparente minima L1, function_code: 3, address: 163, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Minimi}
+    - {key: electrical.apparent_power.l2.min, label: Potenza apparente minima L2, function_code: 3, address: 165, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Minimi}
+    - {key: electrical.apparent_power.l3.min, label: Potenza apparente minima L3, function_code: 3, address: 167, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Minimi}
+    - {key: electrical.active_power.l1.min, label: Potenza attiva minima L1, function_code: 3, address: 169, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Minimi}
+    - {key: electrical.active_power.l2.min, label: Potenza attiva minima L2, function_code: 3, address: 171, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Minimi}
+    - {key: electrical.active_power.l3.min, label: Potenza attiva minima L3, function_code: 3, address: 173, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Minimi}
+    - {key: electrical.reactive_power.l1.min, label: Potenza reattiva minima L1, function_code: 3, address: 175, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Minimi}
+    - {key: electrical.reactive_power.l2.min, label: Potenza reattiva minima L2, function_code: 3, address: 177, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Minimi}
+    - {key: electrical.reactive_power.l3.min, label: Potenza reattiva minima L3, function_code: 3, address: 179, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Minimi}
+    - {key: electrical.power_factor.l1.min, label: Fattore di potenza minimo L1, function_code: 3, address: 181, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Minimi}
+    - {key: electrical.power_factor.l2.min, label: Fattore di potenza minimo L2, function_code: 3, address: 183, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Minimi}
+    - {key: electrical.power_factor.l3.min, label: Fattore di potenza minimo L3, function_code: 3, address: 185, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Minimi}
+    - {key: electrical.frequency.min, label: Frequenza minima, function_code: 3, address: 187, register_count: 2, data_type: float32, unit: Hz, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.average_ln.min, label: Tensione media L-N minima, function_code: 3, address: 189, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.voltage.average_ll.min, label: Tensione media L-L minima, function_code: 3, address: 191, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Minimi}
+    - {key: electrical.current.average.min, label: Corrente media minima, function_code: 3, address: 193, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Minimi}
+    - {key: electrical.apparent_power.total.min, label: Potenza apparente totale minima, function_code: 3, address: 195, register_count: 2, data_type: float32, scale: 0.001, unit: kVA, polling_group: slow, group: Minimi}
+    - {key: electrical.active_power.total.min, label: Potenza attiva totale minima, function_code: 3, address: 197, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: slow, group: Minimi}
+    - {key: electrical.reactive_power.total.min, label: Potenza reattiva totale minima, function_code: 3, address: 199, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: slow, group: Minimi}
+    - {key: electrical.power_factor.total.min, label: Fattore di potenza totale minimo, function_code: 3, address: 201, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Minimi}
+  pac_demand:
+    - {key: electrical.demand.active_power.import, label: Potenza attiva media importata, function_code: 3, address: 501, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.reactive_power.import, label: Potenza reattiva media importata, function_code: 3, address: 503, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.active_power.export, label: Potenza attiva media esportata, function_code: 3, address: 505, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.reactive_power.export, label: Potenza reattiva media esportata, function_code: 3, address: 507, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.active_power.max, label: Potenza attiva massima nel periodo, function_code: 3, address: 509, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.active_power.min, label: Potenza attiva minima nel periodo, function_code: 3, address: 511, register_count: 2, data_type: float32, scale: 0.001, unit: kW, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.reactive_power.max, label: Potenza reattiva massima nel periodo, function_code: 3, address: 513, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.reactive_power.min, label: Potenza reattiva minima nel periodo, function_code: 3, address: 515, register_count: 2, data_type: float32, scale: 0.001, unit: kvar, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.period_seconds, label: Durata periodo di domanda, function_code: 3, address: 517, register_count: 2, data_type: uint32, unit: s, polling_group: normal, group: Domanda}
+    - {key: electrical.demand.elapsed_seconds, label: Tempo trascorso nel periodo, function_code: 3, address: 519, register_count: 2, data_type: uint32, unit: s, polling_group: normal, group: Domanda}
+  pac_energy_totals:
+    - {key: electrical.energy.import.tariff1, label: Energia attiva importata tariffa 1, function_code: 3, address: 801, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+    - {key: electrical.energy.import.tariff2, label: Energia attiva importata tariffa 2, function_code: 3, address: 805, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+    - {key: electrical.energy.export.tariff1, label: Energia attiva esportata tariffa 1, function_code: 3, address: 809, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+    - {key: electrical.energy.export.tariff2, label: Energia attiva esportata tariffa 2, function_code: 3, address: 813, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+    - {key: electrical.reactive_energy.import.tariff1, label: Energia reattiva importata tariffa 1, function_code: 3, address: 817, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: normal, group: Energie}
+    - {key: electrical.reactive_energy.import.tariff2, label: Energia reattiva importata tariffa 2, function_code: 3, address: 821, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: normal, group: Energie}
+    - {key: electrical.reactive_energy.export.tariff1, label: Energia reattiva esportata tariffa 1, function_code: 3, address: 825, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: normal, group: Energie}
+    - {key: electrical.reactive_energy.export.tariff2, label: Energia reattiva esportata tariffa 2, function_code: 3, address: 829, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: normal, group: Energie}
+    - {key: electrical.apparent_energy.tariff1, label: Energia apparente tariffa 1, function_code: 3, address: 833, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: normal, group: Energie}
+    - {key: electrical.apparent_energy.tariff2, label: Energia apparente tariffa 2, function_code: 3, address: 837, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: normal, group: Energie}
+  pac_energy_phases:
+    - {key: electrical.energy.import.l1.tariff1, label: Energia attiva importata L1 T1, function_code: 3, address: 841, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.import.l1.tariff2, label: Energia attiva importata L1 T2, function_code: 3, address: 845, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l1.tariff1, label: Energia attiva esportata L1 T1, function_code: 3, address: 849, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l1.tariff2, label: Energia attiva esportata L1 T2, function_code: 3, address: 853, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l1.tariff1, label: Energia reattiva importata L1 T1, function_code: 3, address: 857, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l1.tariff2, label: Energia reattiva importata L1 T2, function_code: 3, address: 861, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l1.tariff1, label: Energia reattiva esportata L1 T1, function_code: 3, address: 865, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l1.tariff2, label: Energia reattiva esportata L1 T2, function_code: 3, address: 869, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l1.tariff1, label: Energia apparente L1 T1, function_code: 3, address: 873, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l1.tariff2, label: Energia apparente L1 T2, function_code: 3, address: 877, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.import.l2.tariff1, label: Energia attiva importata L2 T1, function_code: 3, address: 881, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.import.l2.tariff2, label: Energia attiva importata L2 T2, function_code: 3, address: 885, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l2.tariff1, label: Energia attiva esportata L2 T1, function_code: 3, address: 889, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l2.tariff2, label: Energia attiva esportata L2 T2, function_code: 3, address: 893, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l2.tariff1, label: Energia reattiva importata L2 T1, function_code: 3, address: 897, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l2.tariff2, label: Energia reattiva importata L2 T2, function_code: 3, address: 901, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l2.tariff1, label: Energia reattiva esportata L2 T1, function_code: 3, address: 905, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l2.tariff2, label: Energia reattiva esportata L2 T2, function_code: 3, address: 909, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l2.tariff1, label: Energia apparente L2 T1, function_code: 3, address: 913, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l2.tariff2, label: Energia apparente L2 T2, function_code: 3, address: 917, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.import.l3.tariff1, label: Energia attiva importata L3 T1, function_code: 3, address: 921, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.import.l3.tariff2, label: Energia attiva importata L3 T2, function_code: 3, address: 925, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l3.tariff1, label: Energia attiva esportata L3 T1, function_code: 3, address: 929, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.energy.export.l3.tariff2, label: Energia attiva esportata L3 T2, function_code: 3, address: 933, register_count: 4, data_type: float64, scale: 0.001, unit: kWh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l3.tariff1, label: Energia reattiva importata L3 T1, function_code: 3, address: 937, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.import.l3.tariff2, label: Energia reattiva importata L3 T2, function_code: 3, address: 941, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l3.tariff1, label: Energia reattiva esportata L3 T1, function_code: 3, address: 945, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.reactive_energy.export.l3.tariff2, label: Energia reattiva esportata L3 T2, function_code: 3, address: 949, register_count: 4, data_type: float64, scale: 0.001, unit: kvarh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l3.tariff1, label: Energia apparente L3 T1, function_code: 3, address: 953, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+    - {key: electrical.apparent_energy.l3.tariff2, label: Energia apparente L3 T2, function_code: 3, address: 957, register_count: 4, data_type: float64, scale: 0.001, unit: kVAh, polling_group: slow, group: Energie per fase}
+  pac_status_2200:
+    - {key: electrical.current.neutral, label: Corrente di neutro, function_code: 3, address: 71, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Correnti}
+    - {key: device.diagnostics, label: Diagnostica dispositivo, function_code: 3, address: 205, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_outputs, label: Stato uscite digitali, function_code: 3, address: 207, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_inputs, label: Stato ingressi digitali, function_code: 3, address: 209, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: electrical.tariff.active, label: Tariffa attiva, function_code: 3, address: 211, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Stato}
+    - {key: device.counter.universal, label: Contatore universale, function_code: 3, address: 215, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.parameter_changes, label: Modifiche parametri rilevanti, function_code: 3, address: 217, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.all_parameter_changes, label: Tutte le modifiche parametri, function_code: 3, address: 219, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: electrical.energy.configurable, label: Contatore energia configurabile, function_code: 3, address: 231, register_count: 2, data_type: float32, unit: kWh, polling_group: slow, group: Contatori}
+  pac_status_3200:
+    - {key: device.limit_violations, label: Violazioni limiti, function_code: 3, address: 203, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.diagnostics, label: Diagnostica dispositivo, function_code: 3, address: 205, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_outputs, label: Stato uscite digitali, function_code: 3, address: 207, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_inputs, label: Stato ingressi digitali, function_code: 3, address: 209, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: electrical.tariff.active, label: Tariffa attiva, function_code: 3, address: 211, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Stato}
+    - {key: device.runtime.seconds, label: Ore di funzionamento, function_code: 3, address: 213, register_count: 2, data_type: uint32, unit: s, polling_group: slow, group: Contatori}
+    - {key: device.counter.universal, label: Contatore universale, function_code: 3, address: 215, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.parameter_changes, label: Modifiche parametri rilevanti, function_code: 3, address: 217, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.all_parameter_changes, label: Tutte le modifiche parametri, function_code: 3, address: 219, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.limit_violations, label: Conteggio violazioni limiti, function_code: 3, address: 221, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+  pac_status_3220:
+    - {key: device.limit_violations, label: Violazioni limiti, function_code: 3, address: 203, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.diagnostics, label: Diagnostica dispositivo, function_code: 3, address: 205, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_outputs, label: Stato uscite digitali, function_code: 3, address: 207, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.digital_inputs, label: Stato ingressi digitali, function_code: 3, address: 209, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: electrical.tariff.active, label: Tariffa attiva, function_code: 3, address: 211, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Stato}
+    - {key: device.runtime.seconds, label: Ore di funzionamento, function_code: 3, address: 213, register_count: 2, data_type: uint32, unit: s, polling_group: slow, group: Contatori}
+    - {key: device.counter.universal, label: Contatore configurabile, function_code: 3, address: 215, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.parameter_changes, label: Modifiche parametri base, function_code: 3, address: 217, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.all_parameter_changes, label: Tutte le modifiche parametri, function_code: 3, address: 219, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+    - {key: device.counter.limit_violations, label: Conteggio modifiche limiti, function_code: 3, address: 221, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Contatori}
+    - {key: electrical.current.neutral, label: Corrente di neutro, function_code: 3, address: 223, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Correnti}
+    - {key: electrical.current.neutral.max, label: Corrente di neutro massima, function_code: 3, address: 225, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+    - {key: electrical.current.neutral.min, label: Corrente di neutro minima, function_code: 3, address: 227, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Minimi}
+    - {key: electrical.energy.configurable, label: Contatore energia configurabile, function_code: 3, address: 231, register_count: 2, data_type: float32, unit: kWh, polling_group: slow, group: Contatori}
+    - {key: device.module1.digital_outputs, label: Uscite digitali modulo 1, function_code: 3, address: 233, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.module1.digital_inputs, label: Ingressi digitali modulo 1, function_code: 3, address: 235, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.module2.digital_outputs, label: Uscite digitali modulo 2, function_code: 3, address: 237, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+    - {key: device.module2.digital_inputs, label: Ingressi digitali modulo 2, function_code: 3, address: 239, register_count: 2, data_type: uint32, unit: '', polling_group: normal, group: Stato}
+profiles:
+  - id: siemens-sentron-pac2200
+    manufacturer: Siemens
+    family: SENTRON PAC
+    model: PAC2200
+    category: multimeter
+    version: 1.0.0
+    description: Multimetro da guida DIN; varianti native Modbus TCP oppure Modbus RTU.
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 1
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities:
+      communication:
+        modbus_tcp: {availability: model_variant, note: Richiede variante PAC2200 con interfaccia Ethernet}
+        modbus_rtu: {availability: model_variant, note: Richiede variante PAC2200 con interfaccia RS485}
+    documentation: {title: PAC2200 Equipment Manual, revision: L1V30415167B-06 12/2022, url: 'https://cache.industry.siemens.com/dl/files/835/109746835/att_1123515/v2/MAN_L1V30415167B-06_en_en-US.pdf'}
+    include_point_sets: [pac_core, pac_status_2200, pac_demand, pac_energy_totals, pac_energy_phases]
+    points: []
+    derived_points:
+      - {key: electrical.energy.import_total, label: Energia attiva importata totale, operation: sum, sources: [electrical.energy.import.tariff1, electrical.energy.import.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.energy.export_total, label: Energia attiva esportata totale, operation: sum, sources: [electrical.energy.export.tariff1, electrical.energy.export.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.reactive_energy.import_total, label: Energia reattiva importata totale, operation: sum, sources: [electrical.reactive_energy.import.tariff1, electrical.reactive_energy.import.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.reactive_energy.export_total, label: Energia reattiva esportata totale, operation: sum, sources: [electrical.reactive_energy.export.tariff1, electrical.reactive_energy.export.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.apparent_energy.total, label: Energia apparente totale, operation: sum, sources: [electrical.apparent_energy.tariff1, electrical.apparent_energy.tariff2], unit: kVAh, group: Energie}
+  - id: siemens-sentron-pac3200
+    manufacturer: Siemens
+    family: SENTRON PAC
+    model: PAC3200
+    category: multimeter
+    version: 1.0.0
+    description: Multimetro da pannello con Modbus TCP integrato; Modbus RTU tramite modulo PAC RS485 opzionale.
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 1
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities:
+      communication:
+        modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}
+        modbus_rtu: {availability: optional_module, note: Richiede modulo di espansione PAC RS485}
+    documentation: {title: SENTRON PAC3200 Manual, revision: A5E01168664B-04 02/2008, url: 'https://cache.industry.siemens.com/dl/files/150/26504150/att_2066/v1/sentron_pac3200_manual_en_04.pdf'}
+    include_point_sets: [pac_core, pac_quality, pac_extrema, pac_status_3200, pac_demand, pac_energy_totals]
+    points: []
+    derived_points:
+      - {key: electrical.energy.import_total, label: Energia attiva importata totale, operation: sum, sources: [electrical.energy.import.tariff1, electrical.energy.import.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.energy.export_total, label: Energia attiva esportata totale, operation: sum, sources: [electrical.energy.export.tariff1, electrical.energy.export.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.reactive_energy.import_total, label: Energia reattiva importata totale, operation: sum, sources: [electrical.reactive_energy.import.tariff1, electrical.reactive_energy.import.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.reactive_energy.export_total, label: Energia reattiva esportata totale, operation: sum, sources: [electrical.reactive_energy.export.tariff1, electrical.reactive_energy.export.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.apparent_energy.total, label: Energia apparente totale, operation: sum, sources: [electrical.apparent_energy.tariff1, electrical.apparent_energy.tariff2], unit: kVAh, group: Energie}
+  - id: siemens-sentron-pac3220
+    manufacturer: Siemens
+    family: SENTRON PAC
+    model: PAC3220
+    category: multimeter
+    version: 1.0.0
+    description: Multimetro da pannello con Modbus TCP integrato; Modbus RTU tramite modulo RS485 opzionale.
+    protocols: [modbus_tcp, modbus_rtu]
+    address_base: 1
+    defaults: {polling_interval_seconds: 5, unit_id: 1}
+    capabilities:
+      communication:
+        modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}
+        modbus_rtu: {availability: optional_module, note: Richiede modulo RS485 7KM9300-0AM00-0AA0}
+    documentation: {title: PAC3120 and PAC3220 Equipment Manual, revision: L1V30425208F-01 10/2019, url: 'https://cache.industry.siemens.com/dl/files/307/109767307/att_1000707/v1/MAN_L1V30425208F-01_en_en-US.pdf'}
+    include_point_sets: [pac_core, pac_quality, pac_extrema, pac_status_3220, pac_demand, pac_energy_totals, pac_energy_phases]
+    points: []
+    derived_points:
+      - {key: electrical.energy.import_total, label: Energia attiva importata totale, operation: sum, sources: [electrical.energy.import.tariff1, electrical.energy.import.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.energy.export_total, label: Energia attiva esportata totale, operation: sum, sources: [electrical.energy.export.tariff1, electrical.energy.export.tariff2], unit: kWh, group: Energie}
+      - {key: electrical.reactive_energy.import_total, label: Energia reattiva importata totale, operation: sum, sources: [electrical.reactive_energy.import.tariff1, electrical.reactive_energy.import.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.reactive_energy.export_total, label: Energia reattiva esportata totale, operation: sum, sources: [electrical.reactive_energy.export.tariff1, electrical.reactive_energy.export.tariff2], unit: kvarh, group: Energie}
+      - {key: electrical.apparent_energy.total, label: Energia apparente totale, operation: sum, sources: [electrical.apparent_energy.tariff1, electrical.apparent_energy.tariff2], unit: kVAh, group: Energie}

@@ -1,0 +1,6 @@
+services:
+  edge-api:
+    devices:
+      - "${EM_RTU_DEVICE:-/dev/ttyUSB0}:${EM_RTU_DEVICE:-/dev/ttyUSB0}"
+    group_add:
+      - dialout
