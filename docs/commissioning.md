@@ -34,12 +34,13 @@ Il gateway Caddy espone solo HTTPS e usa una CA locale. Distribuire la root CA a
 2. creare un secondo amministratore nominativo e gli account operatore/viewer;
 3. impostare la denominazione reale del sito;
 4. aggiungere le connessioni TCP o RTU con timeout conservativo e retry zero nella prima diagnosi;
-5. aggiungere un dispositivo alla volta, verificando modello, variante, protocollo e Unit ID;
-6. eseguire il polling e confrontare tensioni, correnti, potenza ed energia con il display dello strumento;
-7. verificare byte/word order, rapporti TA/TV e unità sul manuale della specifica variante firmware;
-8. costruire la gerarchia energetica, associando prima il generale e poi le utenze a valle;
-9. configurare e provare soglie, presa visione e rientro;
-10. aprire **Sistema → Commissioning**, risolvere tutti i controlli bloccanti e creare il backup finale.
+5. usare **Struttura impianto → Aggiungi dispositivo**, verificando modello, variante, protocollo e Unit ID;
+6. scegliere durante la stessa procedura il nodo energetico esistente oppure crearne uno nel corretto ramo monte/valle;
+7. verificare l'esito del primo polling e confrontare tensioni, correnti, potenza ed energia con il display dello strumento;
+8. verificare byte/word order, rapporti TA/TV e unità sul manuale della specifica variante firmware;
+9. rifinire la gerarchia con il drag and drop, associando prima il generale e poi le utenze a valle;
+10. configurare e provare soglie, presa visione e rientro;
+11. aprire **Sistema → Commissioning**, risolvere tutti i controlli bloccanti e creare il backup finale.
 
 ## 4. Site Acceptance Test
 

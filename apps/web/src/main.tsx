@@ -54,6 +54,7 @@ import { ModbusDiscovery } from "./modbus-discovery";
 import { CommunicationsCenter } from "./communications-center";
 import { SystemCenter } from "./system-center";
 import { DeviceRemoval } from "./device-removal";
+import { DeviceProvisioningWizard } from "./device-provisioning-wizard";
 import { applyTheme, initializeTheme } from "./theme";
 
 initializeTheme();
@@ -791,6 +792,9 @@ function Catalog({ token }: { token: string }) {
               {(p.protocols || []).map((protocol: string) => (
                 <span key={protocol}>{protocolLabel(protocol)}</span>
               ))}
+              {p.driver?.register_map && (
+                <span>Driver · {p.driver.register_map}</span>
+              )}
             </div>
             <footer>
               <code>{p.id}</code>
@@ -855,6 +859,7 @@ function Plant({
   const [editingConnectionId, setEditingConnectionId] = useState(""),
     [editingDeviceId, setEditingDeviceId] = useState(""),
     [discoveryOpen, setDiscoveryOpen] = useState(false),
+    [provisioningOpen, setProvisioningOpen] = useState(false),
     [removingDevice, setRemovingDevice] = useState<any>(null);
   const [deviceCategory, setDeviceCategory] = useState("multimeter"),
     [deviceManufacturer, setDeviceManufacturer] = useState("Siemens");
@@ -1114,6 +1119,13 @@ function Plant({
         subtitle="Definisci cosa misuri e dove si trova, dalla fornitura generale alle singole utenze"
         action={
           <div className="head-actions">
+            <button
+              className="primary-button"
+              onClick={() => setProvisioningOpen(true)}
+            >
+              <Plus size={16} />
+              Aggiungi dispositivo
+            </button>
             <button
               className="icon-button"
               onClick={() => onNavigate("communications")}
@@ -1421,254 +1433,293 @@ function Plant({
         </div>
       )}
       {tab === "devices" && (
-        <div className="plant-grid">
-          <Panel title="Dispositivi installati">
-            {data.devices.length ? (
-              <div className="connection-list device-list">
-                {data.devices.map((d: any) => {
-                  const p = data.profiles.find(
-                    (x: any) => x.id === d.profile_id,
-                  );
-                  return (
-                    <div key={d.id}>
-                      <span className="asset-icon">
-                        <Server />
-                      </span>
-                      <div>
-                        <b>{d.name}</b>
-                        <small>
-                          {p
-                            ? `${categoryLabel(p.definition?.category)} · ${p.definition?.manufacturer} ${p.definition?.model} · `
-                            : ""}
-                          Slave {d.unit_id} ·{" "}
-                          {
-                            data.connections.find(
-                              (c: any) => c.id === d.connection_id,
-                            )?.name
-                          }
-                        </small>
-                        {d.last_error && (
-                          <small className="error-text">{d.last_error}</small>
-                        )}
+        <>
+          <div className="commissioning-launch">
+            <span>
+              <Plus />
+            </span>
+            <div>
+              <b>Devi aggiungere un nuovo dispositivo?</b>
+              <small>
+                Una procedura guidata sceglie il driver, verifica la
+                comunicazione e lo colloca subito nell’albero energetico.
+              </small>
+            </div>
+            <button
+              className="primary-button"
+              onClick={() => setProvisioningOpen(true)}
+            >
+              <Plus />
+              Avvia commissioning
+            </button>
+          </div>
+          <div className="plant-grid">
+            <Panel title="Dispositivi installati">
+              {data.devices.length ? (
+                <div className="connection-list device-list">
+                  {data.devices.map((d: any) => {
+                    const p = data.profiles.find(
+                      (x: any) => x.id === d.profile_id,
+                    );
+                    return (
+                      <div key={d.id}>
+                        <span className="asset-icon">
+                          <Server />
+                        </span>
+                        <div>
+                          <b>{d.name}</b>
+                          <small>
+                            {p
+                              ? `${categoryLabel(p.definition?.category)} · ${p.definition?.manufacturer} ${p.definition?.model} · `
+                              : ""}
+                            Slave {d.unit_id} ·{" "}
+                            {
+                              data.connections.find(
+                                (c: any) => c.id === d.connection_id,
+                              )?.name
+                            }
+                          </small>
+                          {d.last_error && (
+                            <small className="error-text">{d.last_error}</small>
+                          )}
+                        </div>
+                        <Status value={d.status} />
+                        <button
+                          className="row-action"
+                          onClick={() => editDevice(d)}
+                          title="Modifica dispositivo"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          className="row-action danger"
+                          onClick={() => setRemovingDevice(d)}
+                          title="Rimuovi dispositivo"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                      <Status value={d.status} />
-                      <button
-                        className="row-action"
-                        onClick={() => editDevice(d)}
-                        title="Modifica dispositivo"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        className="row-action danger"
-                        onClick={() => setRemovingDevice(d)}
-                        title="Rimuovi dispositivo"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="empty">
-                Nessun dispositivo installato. Configura un canale oppure usa la
-                ricerca automatica nella sezione Comunicazioni.
-              </div>
-            )}
-          </Panel>
-          <Panel
-            title={
-              editingDeviceId
-                ? "Modifica dispositivo"
-                : "Nuovo dispositivo energetico"
-            }
-          >
-            {!data.connections.length ? (
-              <div className="guided-empty">
-                <Cable />
-                <h3>Prima configura un canale</h3>
-                <p>
-                  Per aggiungere un dispositivo serve un collegamento Modbus TCP
-                  o RTU.
-                </p>
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={() => onNavigate("communications")}
-                >
-                  Vai a Comunicazioni
-                </button>
-              </div>
-            ) : (
-              <form className="form-grid" onSubmit={addDevice}>
-                <label className="wide">
-                  Nome
-                  <input
-                    value={device.name}
-                    onChange={(e) =>
-                      setDevice({ ...device, name: e.target.value })
-                    }
-                    placeholder="es. Contatore quadro generale"
-                    required
-                  />
-                </label>
-                <label>
-                  Categoria
-                  <select
-                    value={deviceCategory}
-                    onChange={(e) => {
-                      setDeviceCategory(e.target.value);
-                      setDevice({ ...device, profile_id: "" });
-                    }}
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {categoryLabel(c)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Produttore
-                  <select
-                    value={deviceManufacturer}
-                    onChange={(e) => {
-                      setDeviceManufacturer(e.target.value);
-                      setDevice({ ...device, profile_id: "" });
-                    }}
-                  >
-                    {manufacturers.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="wide">
-                  Canale di comunicazione
-                  <select
-                    value={device.connection_id}
-                    onChange={(e) =>
-                      setDevice({
-                        ...device,
-                        connection_id: e.target.value,
-                        profile_id: "",
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Seleziona un canale…</option>
-                    {data.connections.map((c: any) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} · {protocolLabel(c.kind)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="wide model-section">
-                  <span className="field-title">Modello</span>
-                  {!device.connection_id ? (
-                    <p className="model-help">
-                      Seleziona prima il canale: vedrai soltanto i modelli
-                      compatibili.
-                    </p>
-                  ) : (
-                    <div className="model-picker">
-                      {compatibleProfiles.map((p: any) => {
-                        const communication =
-                          p.definition?.capabilities?.communication?.[
-                            selectedConnection.kind
-                          ];
-                        return (
-                          <button
-                            type="button"
-                            key={p.id}
-                            className={
-                              device.profile_id === p.id ? "selected" : ""
-                            }
-                            onClick={() =>
-                              setDevice({ ...device, profile_id: p.id })
-                            }
-                          >
-                            <span>
-                              <b>{p.definition?.model}</b>
-                              <small>
-                                {p.definition?.family ||
-                                  p.definition?.manufacturer}
-                              </small>
-                            </span>
-                            <em>
-                              {availabilityLabel(communication?.availability)}
-                            </em>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {device.connection_id && !compatibleProfiles.length && (
-                    <p className="model-help error-text">
-                      Nessun modello compatibile con questo canale.
-                    </p>
-                  )}
+                    );
+                  })}
                 </div>
-                {selectedProfile && (
-                  <div className="wide model-detail">
-                    <b>
-                      {selectedProfile.definition?.manufacturer}{" "}
-                      {selectedProfile.definition?.model}
-                    </b>
-                    <p>{selectedProfile.definition?.description}</p>
-                    <small>
-                      {
-                        selectedProfile.definition?.capabilities
-                          ?.communication?.[selectedConnection?.kind]?.note
-                      }
-                    </small>
-                    <span>
-                      {(selectedProfile.definition?.points?.length || 0) +
-                        (selectedProfile.definition?.derived_points?.length ||
-                          0)}{" "}
-                      misure disponibili · normalizzate per la dashboard
-                    </span>
-                  </div>
-                )}
-                <label>
-                  Slave / Unit ID
-                  <input
-                    type="number"
-                    min="0"
-                    max="247"
-                    value={device.unit_id}
-                    onChange={(e) =>
-                      setDevice({ ...device, unit_id: e.target.value })
-                    }
-                  />
-                </label>
-                <button
-                  className="primary-button wide"
-                  disabled={!device.profile_id}
-                >
-                  <Save size={16} />
-                  {editingDeviceId ? "Salva modifiche" : "Installa dispositivo"}
-                </button>
-                {editingDeviceId && (
+              ) : (
+                <div className="empty">
+                  Nessun dispositivo installato. Configura un canale oppure usa
+                  la ricerca automatica nella sezione Comunicazioni.
+                </div>
+              )}
+            </Panel>
+            <Panel
+              title={
+                editingDeviceId
+                  ? "Modifica dispositivo"
+                  : "Nuovo dispositivo energetico"
+              }
+            >
+              {!editingDeviceId ? (
+                <div className="guided-empty">
+                  <ShieldCheck />
+                  <h3>Usa il commissioning guidato</h3>
+                  <p>
+                    Evita configurazioni incomplete: dispositivo, driver e
+                    posizione nell’albero vengono salvati insieme.
+                  </p>
                   <button
                     type="button"
-                    className="icon-button wide"
-                    onClick={() => {
-                      setEditingDeviceId("");
-                      setDevice(deviceBlank);
-                    }}
+                    className="primary-button"
+                    onClick={() => setProvisioningOpen(true)}
                   >
-                    <X size={15} />
-                    Annulla
+                    <Plus size={15} /> Aggiungi dispositivo
                   </button>
-                )}
-              </form>
-            )}
-          </Panel>
-        </div>
+                </div>
+              ) : !data.connections.length ? (
+                <div className="guided-empty">
+                  <Cable />
+                  <h3>Prima configura un canale</h3>
+                  <p>
+                    Per aggiungere un dispositivo serve un collegamento Modbus
+                    TCP o RTU.
+                  </p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => onNavigate("communications")}
+                  >
+                    Vai a Comunicazioni
+                  </button>
+                </div>
+              ) : (
+                <form className="form-grid" onSubmit={addDevice}>
+                  <label className="wide">
+                    Nome
+                    <input
+                      value={device.name}
+                      onChange={(e) =>
+                        setDevice({ ...device, name: e.target.value })
+                      }
+                      placeholder="es. Contatore quadro generale"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Categoria
+                    <select
+                      value={deviceCategory}
+                      onChange={(e) => {
+                        setDeviceCategory(e.target.value);
+                        setDevice({ ...device, profile_id: "" });
+                      }}
+                    >
+                      {categories.map((c) => (
+                        <option key={c} value={c}>
+                          {categoryLabel(c)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Produttore
+                    <select
+                      value={deviceManufacturer}
+                      onChange={(e) => {
+                        setDeviceManufacturer(e.target.value);
+                        setDevice({ ...device, profile_id: "" });
+                      }}
+                    >
+                      {manufacturers.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="wide">
+                    Canale di comunicazione
+                    <select
+                      value={device.connection_id}
+                      onChange={(e) =>
+                        setDevice({
+                          ...device,
+                          connection_id: e.target.value,
+                          profile_id: "",
+                        })
+                      }
+                      required
+                    >
+                      <option value="">Seleziona un canale…</option>
+                      {data.connections.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} · {protocolLabel(c.kind)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="wide model-section">
+                    <span className="field-title">Modello</span>
+                    {!device.connection_id ? (
+                      <p className="model-help">
+                        Seleziona prima il canale: vedrai soltanto i modelli
+                        compatibili.
+                      </p>
+                    ) : (
+                      <div className="model-picker">
+                        {compatibleProfiles.map((p: any) => {
+                          const communication =
+                            p.definition?.capabilities?.communication?.[
+                              selectedConnection.kind
+                            ];
+                          return (
+                            <button
+                              type="button"
+                              key={p.id}
+                              className={
+                                device.profile_id === p.id ? "selected" : ""
+                              }
+                              onClick={() =>
+                                setDevice({ ...device, profile_id: p.id })
+                              }
+                            >
+                              <span>
+                                <b>{p.definition?.model}</b>
+                                <small>
+                                  {p.definition?.family ||
+                                    p.definition?.manufacturer}
+                                </small>
+                              </span>
+                              <em>
+                                {availabilityLabel(communication?.availability)}
+                              </em>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {device.connection_id && !compatibleProfiles.length && (
+                      <p className="model-help error-text">
+                        Nessun modello compatibile con questo canale.
+                      </p>
+                    )}
+                  </div>
+                  {selectedProfile && (
+                    <div className="wide model-detail">
+                      <b>
+                        {selectedProfile.definition?.manufacturer}{" "}
+                        {selectedProfile.definition?.model}
+                      </b>
+                      <p>{selectedProfile.definition?.description}</p>
+                      <small>
+                        {
+                          selectedProfile.definition?.capabilities
+                            ?.communication?.[selectedConnection?.kind]?.note
+                        }
+                      </small>
+                      <span>
+                        {(selectedProfile.definition?.points?.length || 0) +
+                          (selectedProfile.definition?.derived_points?.length ||
+                            0)}{" "}
+                        misure disponibili · normalizzate per la dashboard
+                      </span>
+                    </div>
+                  )}
+                  <label>
+                    Slave / Unit ID
+                    <input
+                      type="number"
+                      min="0"
+                      max="247"
+                      value={device.unit_id}
+                      onChange={(e) =>
+                        setDevice({ ...device, unit_id: e.target.value })
+                      }
+                    />
+                  </label>
+                  <button
+                    className="primary-button wide"
+                    disabled={!device.profile_id}
+                  >
+                    <Save size={16} />
+                    {editingDeviceId
+                      ? "Salva modifiche"
+                      : "Installa dispositivo"}
+                  </button>
+                  {editingDeviceId && (
+                    <button
+                      type="button"
+                      className="icon-button wide"
+                      onClick={() => {
+                        setEditingDeviceId("");
+                        setDevice(deviceBlank);
+                      }}
+                    >
+                      <X size={15} />
+                      Annulla
+                    </button>
+                  )}
+                </form>
+              )}
+            </Panel>
+          </div>
+        </>
       )}
       {tab === "energy" && (
         <>
@@ -1779,6 +1830,21 @@ function Plant({
           onInstalled={async () => {
             await load();
             notify("Dispositivo trovato e aggiunto all’impianto");
+          }}
+        />
+      )}
+      {provisioningOpen && (
+        <DeviceProvisioningWizard
+          token={token}
+          profiles={data.profiles}
+          connections={data.connections}
+          assets={data.assets}
+          onClose={() => setProvisioningOpen(false)}
+          onCreated={async (openTree) => {
+            setProvisioningOpen(false);
+            await load();
+            notify("Dispositivo installato e collocato nell’albero");
+            if (openTree) setTab("energy");
           }}
         />
       )}

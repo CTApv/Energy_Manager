@@ -67,6 +67,7 @@ class ProfileDefinition(BaseModel):
     address_base: Literal[0, 1] = 0
     defaults: dict[str, Any] = Field(default_factory=dict)
     capabilities: dict[str, Any] = Field(default_factory=dict)
+    driver: dict[str, Any] = Field(default_factory=dict)
     documentation: dict[str, Any] = Field(default_factory=dict)
     points: list[PointDefinition] = Field(min_length=1)
     derived_points: list["DerivedPointDefinition"] = Field(default_factory=list)

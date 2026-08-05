@@ -1,0 +1,42 @@
+id: schneider-iem3000-modbus
+manufacturer: Schneider Electric
+family: Acti9 iEM3000
+model: iEM3150/3155/3250/3255/3350/3355 Modbus
+category: multimeter
+description: Profilo read-only per gli analizzatori Acti9 iEM3000 dotati di Modbus RTU. Le energie import/export sono disponibili sui modelli a quattro quadranti compatibili.
+version: 1.0.0
+protocols: [modbus_rtu]
+address_base: 0
+defaults: {polling_interval_seconds: 5, unit_id: 1, baud_rate: 19200, parity: even}
+driver:
+  implementation: standard_modbus
+  compatibility_group: schneider-acti9-iem3000-modbus
+  register_map: acti9-iem3000
+capabilities:
+  energy_role: bidirectional_meter
+  dashboard: electrical_meter
+  writable: false
+  communication:
+    modbus_rtu: {availability: built_in, note: Porta RS485 sui modelli Modbus della famiglia}
+documentation:
+  title: Energy meters iEM3100 / iEM3200 / iEM3300 series User Manual, DOCA0005EN-15
+  url: https://download.schneider-electric.com/files?filename=User+guide&p_Doc_Ref=DOCA0005EN
+  verified: '2026-08-05'
+  warning: Verificare il codice A9MEM esatto; i modelli non a quattro quadranti non espongono tutte le energie direzionali.
+points:
+  - {key: electrical.current.l1, label: Corrente L1, function_code: 3, address: 3000, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.current.l2, label: Corrente L2, function_code: 3, address: 3002, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.current.l3, label: Corrente L3, function_code: 3, address: 3004, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.voltage.l1_n, label: Tensione L1-N, function_code: 3, address: 3028, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.voltage.l2_n, label: Tensione L2-N, function_code: 3, address: 3030, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.voltage.l3_n, label: Tensione L3-N, function_code: 3, address: 3032, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.active_power.l1, label: Potenza attiva L1, function_code: 3, address: 3054, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.active_power.l2, label: Potenza attiva L2, function_code: 3, address: 3056, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.active_power.l3, label: Potenza attiva L3, function_code: 3, address: 3058, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.active_power.total, label: Potenza attiva totale, function_code: 3, address: 3060, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.reactive_power.total, label: Potenza reattiva totale, function_code: 3, address: 3068, register_count: 2, data_type: float32, unit: kVAr, polling_group: fast, group: Potenze}
+  - {key: electrical.apparent_power.total, label: Potenza apparente totale, function_code: 3, address: 3076, register_count: 2, data_type: float32, unit: kVA, polling_group: fast, group: Potenze}
+  - {key: electrical.power_factor.total, label: Fattore di potenza totale, function_code: 3, address: 3084, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità}
+  - {key: electrical.frequency, label: Frequenza, function_code: 3, address: 3110, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Qualità}
+  - {key: electrical.energy.import_total, label: Energia attiva importata, function_code: 3, address: 3204, register_count: 4, data_type: uint64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}
+  - {key: electrical.energy.export_total, label: Energia attiva esportata, function_code: 3, address: 3208, register_count: 4, data_type: uint64, scale: 0.001, unit: kWh, polling_group: normal, group: Energie}

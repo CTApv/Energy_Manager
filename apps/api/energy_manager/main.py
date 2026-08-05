@@ -135,6 +135,19 @@ class DeviceInput(BaseModel):
     unit_id: int = Field(ge=0, le=247)
 
 
+class ProvisioningPlacementInput(BaseModel):
+    asset_id: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    parent_id: str | None = None
+    category: str = Field(default="asset", min_length=1, max_length=60)
+
+
+class DeviceProvisioningInput(BaseModel):
+    device: DeviceInput
+    placement: ProvisioningPlacementInput
+    measurement_key: str = Field(min_length=3, max_length=160)
+
+
 class LocalSiteInput(BaseModel):
     name: str = Field(min_length=1, max_length=160)
 
@@ -484,6 +497,7 @@ def catalog_list(user: Annotated[User, Depends(current_user)], db: Annotated[Ses
                 "description": definition.get("description", ""),
                 "protocols": definition.get("protocols", []),
                 "capabilities": definition.get("capabilities", {}),
+                "driver": definition.get("driver", {}),
                 "documentation": definition.get("documentation", {}),
             }
         )
@@ -937,6 +951,89 @@ def create_device(data: DeviceInput, user: User = Depends(require_roles("platfor
     item = Device(**data.model_dump()); db.add(item); db.flush()
     db.add(AuditEvent(actor=user.username, action="device.create", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
     db.commit(); return as_dict(item)
+
+
+@app.post("/api/provisioning/devices")
+def provision_device(data: DeviceProvisioningInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    """Install a device and place its primary measurement in the energy tree atomically."""
+    connection = db.get(Connection, data.device.connection_id)
+    profile = db.get(DeviceProfile, data.device.profile_id)
+    if not connection or not profile:
+        raise HTTPException(422, "Connessione o driver non trovato")
+    if connection.kind not in profile.definition.get("protocols", []):
+        raise HTTPException(422, "Il driver selezionato non supporta questa connessione")
+    duplicate = db.scalar(
+        select(Device).where(
+            Device.connection_id == data.device.connection_id,
+            Device.unit_id == data.device.unit_id,
+            Device.status != "removed",
+        ).limit(1)
+    )
+    if duplicate:
+        raise HTTPException(409, "Unit ID già configurato su questa connessione")
+
+    available_keys = {
+        point.get("key")
+        for point in [
+            *profile.definition.get("points", []),
+            *profile.definition.get("derived_points", []),
+        ]
+    }
+    if data.measurement_key not in available_keys:
+        raise HTTPException(422, "La misura primaria non appartiene al driver selezionato")
+
+    placement = data.placement
+    asset = db.get(AssetNode, placement.asset_id) if placement.asset_id else None
+    if placement.asset_id and not asset:
+        raise HTTPException(422, "Posizione nell'albero non trovata")
+    if not asset:
+        if not placement.name:
+            raise HTTPException(422, "Indicare il nome del nuovo nodo energetico")
+        if placement.parent_id and not db.get(AssetNode, placement.parent_id):
+            raise HTTPException(422, "Nodo superiore non trovato")
+        sibling_count = db.scalar(
+            select(func.count()).select_from(AssetNode).where(AssetNode.parent_id == placement.parent_id)
+        ) or 0
+        asset = AssetNode(
+            name=placement.name,
+            parent_id=placement.parent_id,
+            category=placement.category,
+            description=f"Creato durante il provisioning di {data.device.name}",
+            sort_order=sibling_count,
+            active=True,
+        )
+        db.add(asset)
+        db.flush()
+
+    device = Device(**data.device.model_dump(), active=True, status="unknown")
+    db.add(device)
+    db.flush()
+    binding = MeasurementBinding(
+        asset_id=asset.id,
+        device_id=device.id,
+        measurement_key=data.measurement_key,
+        role="primary",
+    )
+    db.add(binding)
+    db.add(
+        AuditEvent(
+            actor=user.username,
+            action="device.provision",
+            target_type="device",
+            target_id=device.id,
+            details={
+                "name": device.name,
+                "profile_id": device.profile_id,
+                "connection_id": device.connection_id,
+                "unit_id": device.unit_id,
+                "asset_id": asset.id,
+                "asset_created": placement.asset_id is None,
+                "measurement_key": data.measurement_key,
+            },
+        )
+    )
+    db.commit()
+    return {"device": as_dict(device), "asset": as_dict(asset), "binding": as_dict(binding)}
 
 
 @app.put("/api/devices/{device_id}")

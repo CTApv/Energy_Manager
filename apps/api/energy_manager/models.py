@@ -53,7 +53,7 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.6.1")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.7.0")
 
 
 class Role(Base, TimestampMixin):

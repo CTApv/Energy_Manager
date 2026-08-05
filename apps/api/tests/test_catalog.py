@@ -21,7 +21,7 @@ def test_wrong_register_count_rejected():
 
 
 def test_siemens_pac_bundle_is_valid_and_normalized():
-    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "siemens-pac-family.yaml"
+    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "drivers" / "multimeters" / "siemens-sentron-pac.yaml"
     documents = expand_catalog_document(yaml.safe_load(path.read_text(encoding="utf-8")))
     profiles = {document["model"]: validate_profile(document)[0] for document in documents}
     assert set(profiles) == {"PAC2200", "PAC3200", "PAC3220"}
@@ -42,7 +42,7 @@ def test_tariff_energy_is_combined_into_competitor_neutral_total():
 
 
 def test_multi_vector_energy_asset_profiles_are_valid():
-    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "generic-energy-assets.yaml"
+    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "templates" / "generic-energy-assets.yaml"
     documents = expand_catalog_document(yaml.safe_load(path.read_text(encoding="utf-8")))
     profiles = {document["category"]: validate_profile(document)[0] for document in documents}
     assert set(profiles) == {"pv_inverter", "battery_storage", "ev_charger", "environmental_sensor"}
@@ -52,8 +52,13 @@ def test_multi_vector_energy_asset_profiles_are_valid():
 
 
 def test_italian_field_device_catalog_is_valid_and_traceable():
-    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "field-devices-italy.yaml"
-    documents = expand_catalog_document(yaml.safe_load(path.read_text(encoding="utf-8")))
+    root = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "drivers"
+    paths = [
+        root / "multimeters" / "schneider-acti9-iem3000.yaml",
+        root / "hybrid" / "huawei-sun2000-lb0-luna.yaml",
+        root / "ev-chargers" / "abb-terra-ac.yaml",
+    ]
+    documents = [yaml.safe_load(path.read_text(encoding="utf-8")) for path in paths]
     profiles = {document["id"]: validate_profile(document)[0] for document in documents}
 
     assert set(profiles) == {
@@ -65,6 +70,8 @@ def test_italian_field_device_catalog_is_valid_and_traceable():
     assert all(profile.documentation.get("url", "").startswith("https://") for profile in profiles.values())
     assert all(profile.documentation.get("verified") == "2026-08-05" for profile in profiles.values())
     assert all(profile.capabilities.get("writable") is False for profile in profiles.values())
+    assert all(profile.driver.get("implementation") == "standard_modbus" for profile in profiles.values())
+    assert len({profile.driver.get("register_map") for profile in profiles.values()}) == 3
 
     schneider = profiles["schneider-iem3000-modbus"]
     assert "electrical.energy.import_total" in {point.key for point in schneider.points}
