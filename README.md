@@ -72,8 +72,11 @@ Servizi disponibili:
 | API Edge / OpenAPI | http://localhost:8000/docs |
 | Control Room | http://localhost:3001 |
 | API Control Room / OpenAPI | http://localhost:8001/docs |
-| Simulatore Modbus | `192.168.2.108:5020` dall’impianto o `localhost:5020` dall’host |
-| Controllo simulatore | http://localhost:18090 |
+| Simulatore multimetro | `localhost:5020` · controllo http://localhost:18090 |
+| Simulatore inverter FV | `localhost:5021` · controllo http://localhost:18091 |
+| Simulatore accumulo | `localhost:5022` · controllo http://localhost:18092 |
+| Simulatore colonnina EV | `localhost:5023` · controllo http://localhost:18093 |
+| Simulatore stazione meteo | `localhost:5024` · controllo http://localhost:18094 |
 
 Credenziali esclusivamente demo:
 
@@ -94,6 +97,8 @@ Al primo accesso:
 ## Monitoraggio energetico
 
 Il motore usa chiavi normalizzate, non indirizzi Modbus o nomi proprietari. Per questo un Siemens PAC e uno strumento competitor vengono presentati nello stesso modo; cambiano solo produttore e modello.
+
+I profili di laboratorio completi espongono 57 misure per il multimetro trifase, 30 per l’inverter FV, 28 per l’accumulo, 25 per la colonnina e 22 per la stazione meteo. Includono tensioni e correnti di fase, cosφ, potenze ed energie, armoniche, stringhe FV, celle e limiti BMS, sessione EV e variabili atmosferiche. Sono mappe simulate e non sostituiscono i driver verificati dei produttori.
 
 | Informazione | Chiave normalizzata principale |
 |---|---|

@@ -1,40 +1,60 @@
-bundle_version: 1.0.0
+bundle_version: 2.0.0
 profiles:
   - id: generic-pv-inverter-v1
     manufacturer: Generic
     family: Renewable Energy
-    model: PV Inverter Test Profile
+    model: Complete PV Inverter Simulator
     category: pv_inverter
-    description: Profilo vendor-neutral da banco. Gli indirizzi devono essere adattati al manuale del costruttore prima dell'uso su campo.
-    version: 1.0.0
+    description: Profilo completo vendor-neutral per collaudo di inverter fotovoltaici. Mappa simulata, non utilizzare su strumenti reali.
+    version: 2.0.0
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
-    driver: {implementation: standard_modbus, compatibility_group: template-generic-pv, register_map: demo-only, template: true}
-    capabilities: {energy_role: producer, dashboard: photovoltaic, writable: false}
+    driver: {implementation: standard_modbus, compatibility_group: simulator-pv-v2, register_map: energy-manager-simulator-pv-v2, template: true}
+    capabilities: {energy_role: producer, dashboard: photovoltaic, writable: false, strings: 2, phases: 3}
     points:
-      - {key: pv.voltage.dc, label: Tensione DC, function_code: 3, address: 0, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
-      - {key: pv.current.dc, label: Corrente DC, function_code: 3, address: 2, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Lato DC}
+      - {key: pv.voltage.dc, label: Tensione DC totale, function_code: 3, address: 0, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
+      - {key: pv.current.dc, label: Corrente DC totale, function_code: 3, address: 2, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Lato DC}
       - {key: pv.power.dc_total, label: Potenza DC, function_code: 3, address: 4, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
       - {key: pv.power.ac_total, label: Potenza AC prodotta, function_code: 3, address: 6, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
       - {key: pv.energy.total, label: Energia prodotta totale, function_code: 3, address: 8, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
-      - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 12, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Rete}
+      - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 12, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Rete AC}
       - {key: pv.inverter.efficiency, label: Rendimento inverter, function_code: 3, address: 14, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Prestazioni}
-      - {key: pv.inverter.temperature, label: Temperatura inverter, function_code: 3, address: 16, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Termica}
+      - {key: pv.inverter.temperature, label: Temperatura inverter, function_code: 3, address: 16, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Termica}
       - {key: pv.energy.today, label: Energia prodotta oggi, function_code: 3, address: 18, register_count: 2, data_type: uint32, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
-      - {key: device.operating_state, label: Stato operativo, function_code: 3, address: 20, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: device.operating_state, label: Stato operativo, function_code: 3, address: 20, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Stand-by, '1': Produzione, '2': Derating, '3': Allarme}}
+      - {key: device.alarm_code, label: Codice allarme, function_code: 3, address: 21, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: pv.voltage.string1, label: Tensione stringa 1, function_code: 3, address: 22, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Stringhe}
+      - {key: pv.current.string1, label: Corrente stringa 1, function_code: 3, address: 24, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Stringhe}
+      - {key: pv.power.string1, label: Potenza stringa 1, function_code: 3, address: 26, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Stringhe}
+      - {key: pv.voltage.string2, label: Tensione stringa 2, function_code: 3, address: 28, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Stringhe}
+      - {key: pv.current.string2, label: Corrente stringa 2, function_code: 3, address: 30, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Stringhe}
+      - {key: pv.power.string2, label: Potenza stringa 2, function_code: 3, address: 32, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Stringhe}
+      - {key: electrical.voltage.l1n, label: Tensione rete L1-N, function_code: 3, address: 34, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete AC}
+      - {key: electrical.voltage.l2n, label: Tensione rete L2-N, function_code: 3, address: 36, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete AC}
+      - {key: electrical.voltage.l3n, label: Tensione rete L3-N, function_code: 3, address: 38, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete AC}
+      - {key: electrical.current.l1, label: Corrente AC L1, function_code: 3, address: 40, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete AC}
+      - {key: electrical.current.l2, label: Corrente AC L2, function_code: 3, address: 42, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete AC}
+      - {key: electrical.current.l3, label: Corrente AC L3, function_code: 3, address: 44, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete AC}
+      - {key: electrical.reactive_power.total, label: Potenza reattiva AC, function_code: 3, address: 46, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze}
+      - {key: electrical.apparent_power.total, label: Potenza apparente AC, function_code: 3, address: 48, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze}
+      - {key: electrical.power_factor.total, label: Fattore di potenza, function_code: 3, address: 50, register_count: 2, data_type: float32, unit: '', polling_group: normal, group: Rete AC}
+      - {key: pv.energy.month, label: Energia prodotta nel mese, function_code: 3, address: 52, register_count: 2, data_type: uint32, scale: 0.01, unit: kWh, polling_group: slow, group: Energie}
+      - {key: device.runtime.seconds, label: Tempo di funzionamento, function_code: 3, address: 54, register_count: 2, data_type: uint32, unit: s, polling_group: slow, group: Diagnostica}
+      - {key: pv.insulation_resistance, label: Resistenza di isolamento, function_code: 3, address: 56, register_count: 2, data_type: float32, unit: kΩ, polling_group: normal, group: Sicurezza}
+      - {key: pv.grid_voltage.average, label: Tensione rete media, function_code: 3, address: 58, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Rete AC}
 
   - id: generic-battery-storage-v1
     manufacturer: Generic
     family: BESS
-    model: Battery Storage Test Profile
+    model: Complete Battery Storage Simulator
     category: battery_storage
-    description: Profilo vendor-neutral PCS/BMS da banco; potenza positiva in scarica e negativa in carica.
-    version: 1.0.0
+    description: Profilo completo vendor-neutral per PCS/BMS; potenza positiva in scarica e negativa in carica.
+    version: 2.0.0
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
-    driver: {implementation: standard_modbus, compatibility_group: template-generic-storage, register_map: demo-only, template: true}
+    driver: {implementation: standard_modbus, compatibility_group: simulator-storage-v2, register_map: energy-manager-simulator-storage-v2, template: true}
     capabilities: {energy_role: bidirectional, dashboard: storage, writable: false}
     points:
       - {key: storage.soc, label: Stato di carica, function_code: 3, address: 100, register_count: 2, data_type: float32, unit: '%', polling_group: fast, group: Batteria}
@@ -44,44 +64,99 @@ profiles:
       - {key: storage.energy.discharge_total, label: Energia scaricata totale, function_code: 3, address: 110, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
       - {key: storage.voltage.dc, label: Tensione batteria, function_code: 3, address: 114, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
       - {key: storage.current.dc, label: Corrente batteria, function_code: 3, address: 116, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Lato DC}
-      - {key: storage.temperature, label: Temperatura batteria, function_code: 3, address: 118, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Termica}
+      - {key: storage.temperature, label: Temperatura media batteria, function_code: 3, address: 118, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Termica}
       - {key: storage.cycles, label: Cicli equivalenti, function_code: 3, address: 120, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Vita utile}
       - {key: storage.energy.available, label: Energia disponibile, function_code: 3, address: 122, register_count: 2, data_type: float32, unit: kWh, polling_group: normal, group: Energie}
-      - {key: device.operating_state, label: Stato PCS/BMS, function_code: 3, address: 124, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: device.operating_state, label: Stato PCS/BMS, function_code: 3, address: 124, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Stand-by, '1': Carica, '2': Scarica, '3': Allarme}}
+      - {key: device.alarm_code, label: Codice allarme BMS, function_code: 3, address: 125, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: storage.power.reactive, label: Potenza reattiva PCS, function_code: 3, address: 126, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze}
+      - {key: storage.power.apparent, label: Potenza apparente PCS, function_code: 3, address: 128, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze}
+      - {key: storage.energy.charge_today, label: Energia caricata oggi, function_code: 3, address: 130, register_count: 2, data_type: float32, unit: kWh, polling_group: normal, group: Energie}
+      - {key: storage.energy.discharge_today, label: Energia scaricata oggi, function_code: 3, address: 132, register_count: 2, data_type: float32, unit: kWh, polling_group: normal, group: Energie}
+      - {key: storage.capacity.usable, label: Capacità utilizzabile, function_code: 3, address: 134, register_count: 2, data_type: float32, unit: kWh, polling_group: slow, group: Batteria}
+      - {key: storage.cell_voltage.max, label: Tensione cella massima, function_code: 3, address: 136, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Celle}
+      - {key: storage.cell_voltage.min, label: Tensione cella minima, function_code: 3, address: 138, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Celle}
+      - {key: storage.temperature.max, label: Temperatura massima, function_code: 3, address: 140, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Termica}
+      - {key: storage.temperature.min, label: Temperatura minima, function_code: 3, address: 142, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Termica}
+      - {key: storage.power.charge_limit, label: Limite potenza di carica, function_code: 3, address: 144, register_count: 2, data_type: float32, unit: kW, polling_group: normal, group: Limiti}
+      - {key: storage.power.discharge_limit, label: Limite potenza di scarica, function_code: 3, address: 146, register_count: 2, data_type: float32, unit: kW, polling_group: normal, group: Limiti}
+      - {key: storage.soc.reserve, label: Riserva minima SOC, function_code: 3, address: 148, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Limiti}
+      - {key: device.runtime.seconds, label: Tempo di funzionamento, function_code: 3, address: 150, register_count: 2, data_type: uint32, unit: s, polling_group: slow, group: Diagnostica}
+      - {key: storage.insulation_resistance, label: Resistenza di isolamento, function_code: 3, address: 152, register_count: 2, data_type: float32, unit: kΩ, polling_group: normal, group: Sicurezza}
+      - {key: storage.contactor_state, label: Stato contattori, function_code: 3, address: 154, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Aperti, '1': Chiusi}}
+      - {key: storage.control_mode, label: Modalità controllo, function_code: 3, address: 155, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: Stato, enum: {'0': Automatico, '1': Autoconsumo, '2': Backup}}
 
   - id: generic-ev-charger-v1
     manufacturer: Generic
     family: EVSE
-    model: EV Charger Test Profile
+    model: Complete EV Charger Simulator
     category: ev_charger
-    description: Profilo read-only per monitoraggio energetico di una stazione di ricarica.
-    version: 1.0.0
+    description: Profilo completo read-only per collaudo di una stazione di ricarica trifase.
+    version: 2.0.0
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
-    driver: {implementation: standard_modbus, compatibility_group: template-generic-ev, register_map: demo-only, template: true}
-    capabilities: {energy_role: consumer, dashboard: ev_charging, writable: false}
+    driver: {implementation: standard_modbus, compatibility_group: simulator-ev-v2, register_map: energy-manager-simulator-ev-v2, template: true}
+    capabilities: {energy_role: consumer, dashboard: ev_charging, writable: false, phases: 3, connectors: 1}
     points:
       - {key: ev.power.active, label: Potenza di ricarica, function_code: 3, address: 200, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Sessione}
       - {key: ev.energy.session, label: Energia sessione, function_code: 3, address: 202, register_count: 2, data_type: float32, unit: kWh, polling_group: fast, group: Sessione}
       - {key: ev.energy.total, label: Energia totale erogata, function_code: 3, address: 204, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
       - {key: ev.session.duration, label: Durata sessione, function_code: 3, address: 208, register_count: 2, data_type: uint32, unit: s, polling_group: fast, group: Sessione}
-      - {key: device.operating_state, label: Stato connettore, function_code: 3, address: 210, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: device.operating_state, label: Stato ricarica, function_code: 3, address: 210, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Disponibile, '1': Veicolo connesso, '2': In carica, '3': Sospesa, '4': Guasto}}
+      - {key: ev.connector.state, label: Stato connettore, function_code: 3, address: 211, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Libero, '1': Inserito, '2': Bloccato}}
+      - {key: electrical.current.l1, label: Corrente ricarica L1, function_code: 3, address: 212, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete}
+      - {key: electrical.current.l2, label: Corrente ricarica L2, function_code: 3, address: 214, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete}
+      - {key: electrical.current.l3, label: Corrente ricarica L3, function_code: 3, address: 216, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Rete}
+      - {key: electrical.voltage.l1n, label: Tensione L1-N, function_code: 3, address: 218, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.voltage.l2n, label: Tensione L2-N, function_code: 3, address: 220, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.voltage.l3n, label: Tensione L3-N, function_code: 3, address: 222, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Rete}
+      - {key: electrical.reactive_power.total, label: Potenza reattiva, function_code: 3, address: 224, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze}
+      - {key: electrical.apparent_power.total, label: Potenza apparente, function_code: 3, address: 226, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze}
+      - {key: electrical.power_factor.total, label: Fattore di potenza, function_code: 3, address: 228, register_count: 2, data_type: float32, unit: '', polling_group: normal, group: Rete}
+      - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 230, register_count: 2, data_type: float32, unit: Hz, polling_group: normal, group: Rete}
+      - {key: ev.current.limit, label: Limite corrente applicato, function_code: 3, address: 232, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Limiti}
+      - {key: ev.cable.current_rating, label: Portata cavo, function_code: 3, address: 234, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Limiti}
+      - {key: ev.temperature, label: Temperatura interna, function_code: 3, address: 236, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Termica}
+      - {key: ev.session.power.max, label: Potenza massima sessione, function_code: 3, address: 238, register_count: 2, data_type: float32, unit: kW, polling_group: normal, group: Sessione}
+      - {key: ev.transactions.total, label: Sessioni totali, function_code: 3, address: 240, register_count: 2, data_type: uint32, unit: '', polling_group: slow, group: Contatori}
+      - {key: ev.availability, label: Disponibilità, function_code: 3, address: 242, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Prestazioni}
+      - {key: device.alarm_code, label: Codice guasto, function_code: 3, address: 244, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+      - {key: ev.phases.active, label: Numero fasi attive, function_code: 3, address: 245, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: Rete}
+      - {key: electrical.energy.import_total, label: Energia contatore interno, function_code: 3, address: 246, register_count: 4, data_type: uint64, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
 
   - id: generic-solar-sensor-v1
     manufacturer: Generic
     family: Weather Station
-    model: Solar Sensor Test Profile
+    model: Complete Weather Station Simulator
     category: environmental_sensor
-    description: Sensore ambientale per rendimento specifico e performance ratio fotovoltaico.
-    version: 1.0.0
+    description: Profilo completo per stazione meteo e sensoristica di supporto al fotovoltaico.
+    version: 2.0.0
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 0
     defaults: {polling_interval_seconds: 10, unit_id: 1}
-    driver: {implementation: standard_modbus, compatibility_group: template-generic-environment, register_map: demo-only, template: true}
+    driver: {implementation: standard_modbus, compatibility_group: simulator-weather-v2, register_map: energy-manager-simulator-weather-v2, template: true}
     capabilities: {energy_role: context, dashboard: environment, writable: false}
     points:
       - {key: environment.irradiance.poa, label: Irraggiamento sul piano, function_code: 3, address: 300, register_count: 2, data_type: float32, unit: W/m², polling_group: fast, group: Irraggiamento}
-      - {key: environment.temperature.ambient, label: Temperatura ambiente, function_code: 3, address: 302, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Meteo}
-      - {key: environment.temperature.module, label: Temperatura moduli, function_code: 3, address: 304, register_count: 2, data_type: float32, unit: '°C', polling_group: normal, group: Meteo}
-      - {key: environment.wind.speed, label: Velocità vento, function_code: 3, address: 306, register_count: 2, data_type: float32, unit: m/s, polling_group: normal, group: Meteo}
+      - {key: environment.temperature.ambient, label: Temperatura ambiente, function_code: 3, address: 302, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Meteo}
+      - {key: environment.temperature.module, label: Temperatura moduli, function_code: 3, address: 304, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Meteo}
+      - {key: environment.wind.speed, label: Velocità vento, function_code: 3, address: 306, register_count: 2, data_type: float32, unit: m/s, polling_group: normal, group: Vento}
+      - {key: environment.irradiance.ghi, label: Irraggiamento globale orizzontale, function_code: 3, address: 308, register_count: 2, data_type: float32, unit: W/m², polling_group: fast, group: Irraggiamento}
+      - {key: environment.irradiance.dni, label: Irraggiamento diretto normale, function_code: 3, address: 310, register_count: 2, data_type: float32, unit: W/m², polling_group: normal, group: Irraggiamento}
+      - {key: environment.irradiance.dhi, label: Irraggiamento diffuso orizzontale, function_code: 3, address: 312, register_count: 2, data_type: float32, unit: W/m², polling_group: normal, group: Irraggiamento}
+      - {key: environment.humidity.relative, label: Umidità relativa, function_code: 3, address: 314, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Meteo}
+      - {key: environment.pressure.atmospheric, label: Pressione atmosferica, function_code: 3, address: 316, register_count: 2, data_type: float32, unit: hPa, polling_group: normal, group: Meteo}
+      - {key: environment.wind.direction, label: Direzione vento, function_code: 3, address: 318, register_count: 2, data_type: float32, unit: deg, polling_group: normal, group: Vento}
+      - {key: environment.wind.gust, label: Raffica massima, function_code: 3, address: 320, register_count: 2, data_type: float32, unit: m/s, polling_group: normal, group: Vento}
+      - {key: environment.rainfall.today, label: Pioggia giornaliera, function_code: 3, address: 322, register_count: 2, data_type: float32, unit: mm, polling_group: slow, group: Precipitazioni}
+      - {key: environment.rainfall.rate, label: Intensità pioggia, function_code: 3, address: 324, register_count: 2, data_type: float32, unit: mm/h, polling_group: normal, group: Precipitazioni}
+      - {key: environment.albedo, label: Albedo, function_code: 3, address: 326, register_count: 2, data_type: float32, unit: '', polling_group: slow, group: Superficie}
+      - {key: environment.soiling.ratio, label: Indice di pulizia moduli, function_code: 3, address: 328, register_count: 2, data_type: float32, unit: '%', polling_group: slow, group: Superficie}
+      - {key: environment.irradiance.rear, label: Irraggiamento posteriore bifacciale, function_code: 3, address: 330, register_count: 2, data_type: float32, unit: W/m², polling_group: normal, group: Irraggiamento}
+      - {key: environment.temperature.pyranometer, label: Temperatura piranometro, function_code: 3, address: 332, register_count: 2, data_type: float32, unit: °C, polling_group: slow, group: Diagnostica}
+      - {key: environment.temperature.dew_point, label: Punto di rugiada, function_code: 3, address: 334, register_count: 2, data_type: float32, unit: °C, polling_group: normal, group: Meteo}
+      - {key: device.operating_state, label: Stato stazione meteo, function_code: 3, address: 336, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Avvio, '1': Operativa, '2': Manutenzione, '3': Allarme}}
+      - {key: device.alarm_code, label: Codice diagnostico, function_code: 3, address: 337, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: Stato}
+      - {key: device.supply_voltage, label: Tensione alimentazione, function_code: 3, address: 338, register_count: 2, data_type: float32, unit: V, polling_group: slow, group: Diagnostica}
+      - {key: environment.snow.depth, label: Altezza neve, function_code: 3, address: 340, register_count: 2, data_type: float32, unit: cm, polling_group: slow, group: Precipitazioni}

@@ -3,20 +3,54 @@ keys:
   - electrical.voltage.l1n
   - electrical.voltage.l2n
   - electrical.voltage.l3n
+  - electrical.voltage.l1l2
+  - electrical.voltage.l2l3
+  - electrical.voltage.l3l1
   - electrical.current.l1
   - electrical.current.l2
   - electrical.current.l3
+  - electrical.current.neutral
+  - electrical.active_power.l1
+  - electrical.active_power.l2
+  - electrical.active_power.l3
   - electrical.active_power.total
+  - electrical.reactive_power.l1
+  - electrical.reactive_power.l2
+  - electrical.reactive_power.l3
   - electrical.reactive_power.total
+  - electrical.apparent_power.l1
+  - electrical.apparent_power.l2
+  - electrical.apparent_power.l3
   - electrical.apparent_power.total
+  - electrical.power_factor.l1
+  - electrical.power_factor.l2
+  - electrical.power_factor.l3
   - electrical.power_factor.total
+  - electrical.thd.voltage.l1
+  - electrical.thd.voltage.l2
+  - electrical.thd.voltage.l3
+  - electrical.thd.current.l1
+  - electrical.thd.current.l2
+  - electrical.thd.current.l3
+  - electrical.unbalance.voltage
+  - electrical.unbalance.current
   - electrical.frequency
   - electrical.energy.import_total
   - electrical.energy.export_total
+  - electrical.reactive_energy.import_total
+  - electrical.reactive_energy.export_total
+  - electrical.apparent_energy.total
   - pv.power.ac_total
   - pv.power.dc_total
   - pv.energy.total
   - pv.energy.today
+  - pv.energy.month
+  - pv.voltage.dc
+  - pv.current.dc
+  - pv.voltage.string1
+  - pv.voltage.string2
+  - pv.current.string1
+  - pv.current.string2
   - pv.irradiance
   - pv.inverter.efficiency
   - pv.inverter.temperature
@@ -38,6 +72,17 @@ keys:
   - environment.temperature.ambient
   - environment.temperature.module
   - environment.wind.speed
+  - environment.wind.direction
+  - environment.wind.gust
+  - environment.irradiance.ghi
+  - environment.irradiance.dni
+  - environment.irradiance.dhi
+  - environment.humidity.relative
+  - environment.pressure.atmospheric
+  - environment.rainfall.today
+  - environment.rainfall.rate
+  - environment.albedo
+  - environment.soiling.ratio
   - machine.state
   - machine.production.total
   - machine.temperature

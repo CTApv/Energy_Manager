@@ -19,7 +19,7 @@ def _register_bytes(registers: list[int], byte_order: str, word_order: str) -> b
     return b"".join(chunks)
 
 
-def decode_registers(registers: list[int], definition: dict[str, Any]) -> float | int | bool | str:
+def decode_registers(registers: list[int], definition: dict[str, Any], resolve_enum: bool = True) -> float | int | bool | str:
     data_type = definition["data_type"]
     if data_type == "boolean":
         raw: Any = bool(registers[0])
@@ -36,7 +36,7 @@ def decode_registers(registers: list[int], definition: dict[str, Any]) -> float 
         if isinstance(raw, float) and not math.isfinite(raw):
             raise ValueError("decoded value is not finite")
     enum = definition.get("enum")
-    if enum:
+    if enum and resolve_enum:
         return enum.get(str(int(raw)), str(raw))
     return raw
 

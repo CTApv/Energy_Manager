@@ -1,96 +1,70 @@
 id: generic-meter-v1
 manufacturer: Generic
-model: Demo Meter
+family: Power Quality Analyzer
+model: Complete Three-phase Meter Simulator
 category: multimeter
-version: 1.0.0
-protocols:
-  - modbus_tcp
-  - modbus_rtu
+description: Profilo completo vendor-neutral per collaudo di multimetri trifase. Mappa simulata, non utilizzare su strumenti reali.
+version: 2.0.0
+protocols: [modbus_tcp, modbus_rtu]
 address_base: 0
-defaults:
-  polling_interval_seconds: 5
-  unit_id: 1
-driver:
-  implementation: standard_modbus
-  compatibility_group: template-generic-meter
-  register_map: demo-only
-  template: true
+defaults: {polling_interval_seconds: 5, unit_id: 1}
+driver: {implementation: standard_modbus, compatibility_group: simulator-meter-v2, register_map: energy-manager-simulator-meter-v2, template: true}
+capabilities: {energy_role: meter, dashboard: power_quality, writable: false, phases: 3}
 points:
-  - key: electrical.active_power.total
-    label: Potenza attiva totale
-    function_code: 3
-    address: 100
-    register_count: 2
-    data_type: float32
-    byte_order: big
-    word_order: big
-    scale: 1
-    offset: 0
-    unit: kW
-    access: read
-    polling_group: fast
-  - key: electrical.energy.import_total
-    label: Energia importata
-    function_code: 3
-    address: 110
-    register_count: 2
-    data_type: uint32
-    byte_order: big
-    word_order: big
-    scale: 0.01
-    offset: 0
-    unit: kWh
-    access: read
-    polling_group: normal
-  - key: electrical.voltage.l1n
-    label: Tensione L1-N
-    function_code: 3
-    address: 120
-    register_count: 2
-    data_type: float32
-    byte_order: big
-    word_order: big
-    scale: 1
-    offset: 0
-    unit: V
-    access: read
-    polling_group: normal
-  - key: electrical.current.l1
-    label: Corrente L1
-    function_code: 3
-    address: 122
-    register_count: 2
-    data_type: float32
-    byte_order: big
-    word_order: big
-    scale: 1
-    offset: 0
-    unit: A
-    access: read
-    polling_group: normal
-  - key: electrical.power_factor.total
-    label: Fattore di potenza
-    function_code: 3
-    address: 124
-    register_count: 2
-    data_type: float32
-    byte_order: big
-    word_order: big
-    scale: 1
-    offset: 0
-    unit: ""
-    access: read
-    polling_group: normal
-  - key: electrical.frequency
-    label: Frequenza
-    function_code: 3
-    address: 126
-    register_count: 2
-    data_type: float32
-    byte_order: big
-    word_order: big
-    scale: 1
-    offset: 0
-    unit: Hz
-    access: read
-    polling_group: normal
+  - {key: electrical.active_power.total, label: Potenza attiva totale, function_code: 3, address: 100, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.reactive_power.total, label: Potenza reattiva totale, function_code: 3, address: 102, register_count: 2, data_type: float32, unit: kvar, polling_group: fast, group: Potenze}
+  - {key: electrical.apparent_power.total, label: Potenza apparente totale, function_code: 3, address: 104, register_count: 2, data_type: float32, unit: kVA, polling_group: fast, group: Potenze}
+  - {key: electrical.power_factor.total, label: Fattore di potenza totale, function_code: 3, address: 106, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità elettrica}
+  - {key: electrical.frequency, label: Frequenza, function_code: 3, address: 108, register_count: 2, data_type: float32, unit: Hz, polling_group: fast, group: Qualità elettrica}
+  - {key: electrical.energy.import_total, label: Energia attiva importata, function_code: 3, address: 110, register_count: 2, data_type: uint32, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+  - {key: electrical.energy.export_total, label: Energia attiva esportata, function_code: 3, address: 112, register_count: 2, data_type: uint32, scale: 0.01, unit: kWh, polling_group: normal, group: Energie}
+  - {key: electrical.reactive_energy.import_total, label: Energia reattiva importata, function_code: 3, address: 114, register_count: 2, data_type: uint32, scale: 0.01, unit: kvarh, polling_group: normal, group: Energie}
+  - {key: electrical.reactive_energy.export_total, label: Energia reattiva esportata, function_code: 3, address: 116, register_count: 2, data_type: uint32, scale: 0.01, unit: kvarh, polling_group: normal, group: Energie}
+  - {key: electrical.apparent_energy.total, label: Energia apparente totale, function_code: 3, address: 118, register_count: 2, data_type: uint32, scale: 0.01, unit: kVAh, polling_group: normal, group: Energie}
+  - {key: electrical.voltage.l1n, label: Tensione L1-N, function_code: 3, address: 120, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.voltage.l2n, label: Tensione L2-N, function_code: 3, address: 122, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.voltage.l3n, label: Tensione L3-N, function_code: 3, address: 124, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Tensioni}
+  - {key: electrical.voltage.l1l2, label: Tensione L1-L2, function_code: 3, address: 126, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Tensioni}
+  - {key: electrical.voltage.l2l3, label: Tensione L2-L3, function_code: 3, address: 128, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Tensioni}
+  - {key: electrical.voltage.l3l1, label: Tensione L3-L1, function_code: 3, address: 130, register_count: 2, data_type: float32, unit: V, polling_group: normal, group: Tensioni}
+  - {key: electrical.current.l1, label: Corrente L1, function_code: 3, address: 132, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.current.l2, label: Corrente L2, function_code: 3, address: 134, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.current.l3, label: Corrente L3, function_code: 3, address: 136, register_count: 2, data_type: float32, unit: A, polling_group: fast, group: Correnti}
+  - {key: electrical.current.neutral, label: Corrente di neutro, function_code: 3, address: 138, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Correnti}
+  - {key: electrical.active_power.l1, label: Potenza attiva L1, function_code: 3, address: 140, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze per fase}
+  - {key: electrical.active_power.l2, label: Potenza attiva L2, function_code: 3, address: 142, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze per fase}
+  - {key: electrical.active_power.l3, label: Potenza attiva L3, function_code: 3, address: 144, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze per fase}
+  - {key: electrical.reactive_power.l1, label: Potenza reattiva L1, function_code: 3, address: 146, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.reactive_power.l2, label: Potenza reattiva L2, function_code: 3, address: 148, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.reactive_power.l3, label: Potenza reattiva L3, function_code: 3, address: 150, register_count: 2, data_type: float32, unit: kvar, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.apparent_power.l1, label: Potenza apparente L1, function_code: 3, address: 152, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.apparent_power.l2, label: Potenza apparente L2, function_code: 3, address: 154, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.apparent_power.l3, label: Potenza apparente L3, function_code: 3, address: 156, register_count: 2, data_type: float32, unit: kVA, polling_group: normal, group: Potenze per fase}
+  - {key: electrical.power_factor.l1, label: Fattore di potenza L1, function_code: 3, address: 158, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità elettrica}
+  - {key: electrical.power_factor.l2, label: Fattore di potenza L2, function_code: 3, address: 160, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità elettrica}
+  - {key: electrical.power_factor.l3, label: Fattore di potenza L3, function_code: 3, address: 162, register_count: 2, data_type: float32, unit: '', polling_group: fast, group: Qualità elettrica}
+  - {key: electrical.thd.voltage.l1, label: THD tensione L1, function_code: 3, address: 164, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.thd.voltage.l2, label: THD tensione L2, function_code: 3, address: 166, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.thd.voltage.l3, label: THD tensione L3, function_code: 3, address: 168, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.thd.current.l1, label: THD corrente L1, function_code: 3, address: 170, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.thd.current.l2, label: THD corrente L2, function_code: 3, address: 172, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.thd.current.l3, label: THD corrente L3, function_code: 3, address: 174, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Armoniche}
+  - {key: electrical.unbalance.voltage, label: Squilibrio tensioni, function_code: 3, address: 176, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità elettrica}
+  - {key: electrical.unbalance.current, label: Squilibrio correnti, function_code: 3, address: 178, register_count: 2, data_type: float32, unit: '%', polling_group: normal, group: Qualità elettrica}
+  - {key: electrical.demand.active_power, label: Domanda potenza attiva, function_code: 3, address: 180, register_count: 2, data_type: float32, unit: kW, polling_group: normal, group: Domanda}
+  - {key: electrical.demand.active_power.max, label: Massima domanda potenza, function_code: 3, address: 182, register_count: 2, data_type: float32, unit: kW, polling_group: slow, group: Domanda}
+  - {key: electrical.demand.current.l1, label: Domanda corrente L1, function_code: 3, address: 184, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Domanda}
+  - {key: electrical.demand.current.l2, label: Domanda corrente L2, function_code: 3, address: 186, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Domanda}
+  - {key: electrical.demand.current.l3, label: Domanda corrente L3, function_code: 3, address: 188, register_count: 2, data_type: float32, unit: A, polling_group: normal, group: Domanda}
+  - {key: electrical.current.max.l1, label: Corrente massima L1, function_code: 3, address: 190, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+  - {key: electrical.current.max.l2, label: Corrente massima L2, function_code: 3, address: 192, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+  - {key: electrical.current.max.l3, label: Corrente massima L3, function_code: 3, address: 194, register_count: 2, data_type: float32, unit: A, polling_group: slow, group: Massimi}
+  - {key: electrical.phase_angle.l1, label: Angolo fase L1, function_code: 3, address: 196, register_count: 2, data_type: float32, unit: deg, polling_group: normal, group: Fasi}
+  - {key: electrical.phase_angle.l2, label: Angolo fase L2, function_code: 3, address: 198, register_count: 2, data_type: float32, unit: deg, polling_group: normal, group: Fasi}
+  - {key: electrical.phase_angle.l3, label: Angolo fase L3, function_code: 3, address: 200, register_count: 2, data_type: float32, unit: deg, polling_group: normal, group: Fasi}
+  - {key: device.operating_state, label: Stato operativo, function_code: 3, address: 202, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato, enum: {'0': Arrestato, '1': Operativo, '2': Allarme}}
+  - {key: device.alarm_code, label: Codice allarme, function_code: 3, address: 203, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: Stato}
+  - {key: device.runtime.seconds, label: Tempo di funzionamento, function_code: 3, address: 204, register_count: 2, data_type: uint32, unit: s, polling_group: slow, group: Diagnostica}
+  - {key: device.digital_inputs, label: Ingressi digitali, function_code: 3, address: 206, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: I/O}
+  - {key: device.digital_outputs, label: Uscite digitali, function_code: 3, address: 207, register_count: 1, data_type: uint16, unit: '', polling_group: normal, group: I/O}
+  - {key: device.temperature, label: Temperatura interna, function_code: 3, address: 208, register_count: 2, data_type: float32, unit: °C, polling_group: slow, group: Diagnostica}

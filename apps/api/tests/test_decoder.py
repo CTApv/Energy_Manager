@@ -15,3 +15,8 @@ def test_boolean_and_bit():
     assert decode_registers([8], {"data_type":"bit_field","bit":3}) is True
 def test_ascii(): assert decode_registers([0x454d,0x0000],{"data_type":"ascii"}) == "EM"
 
+def test_enum_can_preserve_numeric_value_for_telemetry():
+    definition = {"data_type": "uint16", "enum": {"1": "Running"}}
+    assert decode_registers([1], definition) == "Running"
+    assert decode_registers([1], definition, resolve_enum=False) == 1
+
