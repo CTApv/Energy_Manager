@@ -211,8 +211,6 @@ class ModbusDiscoveredInstallInput(BaseModel):
 
 
 class DeviceRemovalInput(BaseModel):
-    confirm_name: str = Field(min_length=1, max_length=160)
-    remove_bindings: bool = False
     purge_history: bool = False
 
 
@@ -260,7 +258,7 @@ def save_preference(db: Session, key: str, value: dict[str, Any]) -> SystemPrefe
 
 
 @app.get("/api/system/overview")
-def system_overview(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+def system_overview(user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
     interfaces = network_interfaces()
     profiles = {item.key.removeprefix("network.interface."): item.value for item in db.scalars(select(SystemPreference).where(SystemPreference.key.like("network.interface.%")))}
     for interface in interfaces:
@@ -277,7 +275,7 @@ def system_overview(user: User = Depends(require_roles("platform_admin", "techni
 
 
 @app.put("/api/system/preferences")
-def update_system_preferences(data: GeneralPreferencesInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+def update_system_preferences(data: GeneralPreferencesInput, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
     value = data.model_dump(); save_preference(db, "general", value)
     db.add(AuditEvent(actor=user.username, action="system.preferences.update", target_type="system", target_id="general", details=value))
     db.commit(); return value
@@ -674,7 +672,7 @@ def get_energy_settings(user: User = Depends(current_user), db: Session = Depend
 
 
 @app.put("/api/energy/settings")
-def update_energy_settings(data: EnergySettingsInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+def update_energy_settings(data: EnergySettingsInput, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
     if settings.mode != "edge": raise HTTPException(404)
     try:
         safe_zone(data.timezone)
@@ -953,11 +951,7 @@ def device_removal_impact(device_id: str, user: User = Depends(require_roles("pl
 def delete_device(device_id: str, data: DeviceRemovalInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     item = db.get(Device, device_id)
     if not item or item.status == "removed": raise HTTPException(404, "Dispositivo non trovato")
-    if secrets.compare_digest(data.confirm_name.strip(), item.name.strip()) is False:
-        raise HTTPException(422, "Il nome di conferma non corrisponde")
     bindings = db.scalar(select(func.count()).select_from(MeasurementBinding).where(MeasurementBinding.device_id == device_id)) or 0
-    if bindings and not data.remove_bindings:
-        raise HTTPException(409, f"Il dispositivo ha {bindings} associazioni nell'albero. Conferma la loro rimozione.")
     if bindings: db.execute(delete(MeasurementBinding).where(MeasurementBinding.device_id == device_id))
     deleted_samples = 0
     if data.purge_history:
