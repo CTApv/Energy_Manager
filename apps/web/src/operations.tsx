@@ -15,8 +15,45 @@ const time=(value:any)=>value?new Date(value).toLocaleTimeString('it-IT',{hour:'
 const severityLabel:Record<string,string>={info:'Informativo',warning:'Avviso',high:'Alto',critical:'Critico'}
 const conditionLabel:Record<string,string>={measurement_above:'superiore a',measurement_below:'inferiore a',measurement_outside:'fuori intervallo'}
 
-type GaugeSpec={keys:string[],label:string,min?:number,max?:number,tone?:string}
+type MetricFamily='power'|'voltage'|'current'|'energy'|'quality'|'frequency'|'thermal'|'solar'|'storage'|'mobility'|'weather'|'state'|'other'
+type GaugeSpec={keys:string[],label:string,min?:number,max?:number,tone?:string,family?:MetricFamily}
 type DashboardPreset={label:string,eyebrow:string,icon:any,tone:string,gauges:GaugeSpec[],charts:string[][]}
+
+const metricFamilies:Record<MetricFamily,{label:string,description:string,color:string,palette:string[]}>= {
+  power:{label:'Potenze',description:'Flussi attivi, reattivi e apparenti',color:'#00a878',palette:['#00a878','#ef9f20','#3b82f6','#e05757']},
+  voltage:{label:'Tensioni',description:'Livelli di tensione e bilanciamento delle fasi',color:'#1689e6',palette:['#1689e6','#40a7f4','#75c4ff','#0e6eb8']},
+  current:{label:'Correnti',description:'Carico elettrico sulle singole fasi',color:'#7c5ce5',palette:['#7654d8','#9a74ef','#bd9cff','#5735b1']},
+  energy:{label:'Energie',description:'Energia prodotta, assorbita e contabilizzata',color:'#dc8a13',palette:['#dc8a13','#f0aa32','#ffc65c','#b86a05']},
+  quality:{label:'Qualità della rete',description:'Fattore di potenza, armoniche e squilibri',color:'#d14b7d',palette:['#d14b7d','#ed719e','#a94cba','#ef8f63']},
+  frequency:{label:'Frequenza',description:'Stabilità della frequenza di rete',color:'#0c9ca6',palette:['#0c9ca6','#35bdc5','#08777e']},
+  thermal:{label:'Temperature',description:'Condizioni termiche e protezione del dispositivo',color:'#db643f',palette:['#db643f','#f18a56','#b7472a']},
+  solar:{label:'Risorsa solare',description:'Irraggiamento e prestazione fotovoltaica',color:'#d99308',palette:['#d99308','#f3b62d','#ffd469']},
+  storage:{label:'Accumulo',description:'Stato, capacità e disponibilità energetica',color:'#6d55cc',palette:['#6d55cc','#947be7','#b5a2f1']},
+  mobility:{label:'Ricarica elettrica',description:'Sessione, connettore e limiti di ricarica',color:'#087cb8',palette:['#087cb8','#31a0d6','#6abce4']},
+  weather:{label:'Dati ambientali',description:'Meteo, vento e condizioni del sito',color:'#158a94',palette:['#158a94','#37a9b2','#65c4ca']},
+  state:{label:'Stato e diagnostica',description:'Disponibilità, allarmi e stato operativo',color:'#596d65',palette:['#596d65','#7f918a','#a2afa9']},
+  other:{label:'Altre misure',description:'Parametri operativi del dispositivo',color:'#547168',palette:['#547168','#789088','#9aacA5']},
+}
+
+const metricFamily=(key:string,group=''):MetricFamily=>{
+  const probe=`${key} ${group}`.toLowerCase()
+  if(/voltage|tensione/.test(probe))return 'voltage'
+  if(/current|corrente/.test(probe))return 'current'
+  if(/power_factor|cosphi|thd|unbalance|angle|qualit/.test(probe))return 'quality'
+  if(/frequency|frequenza/.test(probe))return 'frequency'
+  if(/energy|energia|energie/.test(probe))return 'energy'
+  if(/power|potenz/.test(probe))return 'power'
+  if(/temperature|thermal|termic/.test(probe))return 'thermal'
+  if(/irradiance|albedo|soiling|solar|irraggiamento/.test(probe))return 'solar'
+  if(/storage|soc|soh|batter|accumulo/.test(probe))return 'storage'
+  if(/^ev\.|ricarica|connettore|sessione/.test(probe))return 'mobility'
+  if(/environment|meteo|vento|umid|piogg|pression|neve/.test(probe))return 'weather'
+  if(/state|status|alarm|diagnostic|stato|allarm/.test(probe))return 'state'
+  return 'other'
+}
+const gaugeFamily=(spec:GaugeSpec,measurement?:any)=>spec.family||metricFamily(measurement?.key||spec.keys[0],measurement?.group)
+const familyForKeys=(keys:string[],measurements:any[])=>metricFamily(keys[0]||'',measurements.find(item=>keys.includes(item.key))?.group)
+const chartColor=(key:string,index:number)=>{const family=metricFamily(key);const palette=metricFamilies[family].palette;return palette[index%palette.length]}
 
 const dashboardPresets:Record<string,DashboardPreset>={
   multimeter:{label:'Analizzatore di rete',eyebrow:'QUALITÀ E CONSUMI',icon:CircleGauge,tone:'grid',gauges:[
@@ -25,6 +62,8 @@ const dashboardPresets:Record<string,DashboardPreset>={
     {keys:['electrical.voltage.l2n','electrical.voltage.l2_n'],label:'Tensione L2',min:0,max:260,tone:'blue'},
     {keys:['electrical.voltage.l3n','electrical.voltage.l3_n'],label:'Tensione L3',min:0,max:260,tone:'blue'},
     {keys:['electrical.current.l1'],label:'Corrente L1',min:0,tone:'violet'},
+    {keys:['electrical.current.l2'],label:'Corrente L2',min:0,tone:'violet'},
+    {keys:['electrical.current.l3'],label:'Corrente L3',min:0,tone:'violet'},
     {keys:['electrical.power_factor.total'],label:'Fattore di potenza',min:0,max:1,tone:'amber'},
     {keys:['electrical.frequency'],label:'Frequenza',min:45,max:55,tone:'violet'},
     {keys:['electrical.thd.voltage.l1'],label:'THD tensione L1',min:0,max:10,tone:'amber'},
@@ -85,7 +124,8 @@ function RadialGauge({measurement,spec}:{measurement:any,spec:GaugeSpec}){
   const value=Number(measurement?.value),valid=Number.isFinite(value)
   const min=spec.min??0,max=spec.max??Math.max(Math.abs(value)*1.25,1)
   const progress=valid?Math.max(0,Math.min(1,(value-min)/Math.max(max-min,.0001))):0
-  return <article className={`radial-gauge ${spec.tone||'cyan'} ${measurement?.quality!=='good'?'uncertain':''}`}>
+  const family=gaugeFamily(spec,measurement)
+  return <article className={`radial-gauge family-${family} ${measurement?.quality!=='good'?'uncertain':''}`}>
     <div className="gauge-visual">
       <svg viewBox="0 0 132 78" aria-label={`${spec.label}: ${valid?value:'dato non disponibile'}`}>
         <path className="gauge-track" d="M14 66a52 52 0 0 1 104 0" pathLength="100"/>
@@ -98,13 +138,12 @@ function RadialGauge({measurement,spec}:{measurement:any,spec:GaugeSpec}){
   </article>
 }
 
-const chartColors=['#18c98b','#45a7ff','#f1af3d','#a78bfa','#ff6f61']
 function AdaptiveChart({series,measurements,title}:{series:any[],measurements:any[],title:string}){
   const populated=series.filter(item=>item.points?.length>1)
   if(!populated.length)return <div className="adaptive-chart empty"><TrendingUp/><b>{title}</b><span>Il grafico si attiverà dopo due campioni validi.</span></div>
   const values=populated.flatMap(item=>item.points.map((point:any)=>Number(point.avg))).filter(Number.isFinite)
   const min=Math.min(...values),max=Math.max(...values),span=Math.max(max-min,.0001)
-  const paths=populated.map((item,index)=>({item,color:chartColors[index%chartColors.length],points:item.points.map((point:any,pointIndex:number)=>`${pointIndex*(720/Math.max(item.points.length-1,1))},${184-((Number(point.avg)-min)/span)*142}`).join(' ')}))
+  const paths=populated.map((item,index)=>({item,color:chartColor(item.key,index),points:item.points.map((point:any,pointIndex:number)=>`${pointIndex*(720/Math.max(item.points.length-1,1))},${184-((Number(point.avg)-min)/span)*142}`).join(' ')}))
   return <article className="adaptive-chart"><header><div><p>ANDAMENTO</p><h3>{title}</h3></div><span>{populated[0]?.points.length||0} intervalli</span></header><div className="adaptive-chart-body"><div className="chart-y"><span>{fmt(max)}</span><span>{fmt((max+min)/2)}</span><span>{fmt(min)}</span></div><svg viewBox="0 0 720 205" preserveAspectRatio="none"><line x1="0" y1="42" x2="720" y2="42"/><line x1="0" y1="113" x2="720" y2="113"/><line x1="0" y1="184" x2="720" y2="184"/>{paths.map(path=><polyline key={path.item.key} points={path.points} fill="none" stroke={path.color} strokeWidth="3" vectorEffect="non-scaling-stroke"/>)}</svg></div><footer>{paths.map(path=>{const meta=measurements.find(item=>item.key===path.item.key);return <span key={path.item.key}><i style={{background:path.color}}/>{meta?.label||path.item.key}<small>{path.item.unit}</small></span>})}</footer></article>
 }
 
@@ -114,6 +153,7 @@ function DeviceLiveCockpit({token,data,query,setQuery}:{token:string,data:any,qu
   const [tab,setTab]=useState<'overview'|'trends'|'telemetry'>('overview'),[hours,setHours]=useState(24),[history,setHistory]=useState<any[]>([]),[historyLoading,setHistoryLoading]=useState(false)
   const configured=useMemo(()=>preset.gauges.map(spec=>({spec,measurement:findMeasure(measurements,spec.keys)})).filter(item=>item.measurement),[measurements,preset])
   const gauges=useMemo(()=>configured.length?configured:measurements.filter((item:any)=>Number.isFinite(Number(item.value))).slice(0,4).map((measurement:any)=>({measurement,spec:{keys:[measurement.key],label:measurement.label,tone:'cyan'} as GaugeSpec})),[configured,measurements])
+  const gaugeSections=useMemo(()=>{const result=new Map<MetricFamily,any[]>();gauges.forEach((item:any)=>{const family=gaugeFamily(item.spec,item.measurement);result.set(family,[...(result.get(family)||[]),item])});return Array.from(result.entries())},[gauges])
   const chartGroups=useMemo(()=>preset.charts.map(keys=>keys.filter(key=>measurements.some((item:any)=>item.key===key))).filter(keys=>keys.length),[measurements,preset])
   useEffect(()=>{if(!device?.id||!chartGroups.length){setHistory([]);return}let cancelled=false;setHistoryLoading(true);const keys=Array.from(new Set(chartGroups.flat())).join(',');void api(`/analytics/timeseries?device_id=${encodeURIComponent(device.id)}&hours=${hours}&bucket_minutes=${hours<=6?1:hours<=24?5:60}&measurement_keys=${encodeURIComponent(keys)}`,token).then(result=>{if(!cancelled)setHistory(result.series||[])}).catch(()=>{if(!cancelled)setHistory([])}).finally(()=>{if(!cancelled)setHistoryLoading(false)});return()=>{cancelled=true}},[token,device?.id,hours,chartGroups.map(group=>group.join(',')).join('|')])
   if(!device)return null
@@ -121,8 +161,8 @@ function DeviceLiveCockpit({token,data,query,setQuery}:{token:string,data:any,qu
   return <section className={`device-cockpit ${preset.tone} ${device.status}`}>
     <header className="cockpit-hero"><div className="cockpit-symbol"><Icon/><span/></div><div className="cockpit-identity"><p>{preset.eyebrow}</p><h2>{device.name}</h2><span>{preset.label} · {device.manufacturer} {device.model}</span></div><div className="cockpit-health"><LiveBadge status={device.status}/><span><b>{good}/{measurements.length}</b> misure valide</span><span><b>{fmt(device.cycle_duration_ms,0)} ms</b> ciclo Edge</span></div></header>
     <nav className="cockpit-tabs" aria-label="Sezioni dashboard dispositivo"><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}><Gauge/>Quadro live</button><button className={tab==='trends'?'active':''} onClick={()=>setTab('trends')}><TrendingUp/>Andamenti</button><button className={tab==='telemetry'?'active':''} onClick={()=>setTab('telemetry')}><Radio/>Tutte le misure <em>{measurements.length}</em></button></nav>
-    {tab==='overview'&&<><div className="gauge-deck">{gauges.map(({measurement,spec}:any)=><RadialGauge key={measurement.key} measurement={measurement} spec={spec}/>)}</div>{chartGroups[0]&&<div className="cockpit-chart-feature"><AdaptiveChart series={history.filter(item=>chartGroups[0].includes(item.key))} measurements={measurements} title={measurements.find((item:any)=>chartGroups[0].includes(item.key))?.group||'Profilo operativo'}/></div>}</>}
-    {tab==='trends'&&<div className="trend-workspace"><div className="trend-controls"><div><p>ORIZZONTE TEMPORALE</p><span>Storico aggregato con soli campioni validi</span></div><nav>{[{v:1,l:'1 ora'},{v:6,l:'6 ore'},{v:24,l:'24 ore'},{v:168,l:'7 giorni'}].map(period=><button key={period.v} className={hours===period.v?'active':''} onClick={()=>setHours(period.v)}>{period.l}</button>)}</nav></div>{historyLoading?<div className="cockpit-loading"><RefreshCw/>Elaborazione storico…</div>:<div className="adaptive-chart-grid">{chartGroups.map((keys,index)=><AdaptiveChart key={keys.join()} series={history.filter(item=>keys.includes(item.key))} measurements={measurements} title={index===0?'Prestazione principale':'Parametri operativi'}/>)}</div>}</div>}
+    {tab==='overview'&&<><div className="gauge-sections">{gaugeSections.map(([family,items])=>{const meta=metricFamilies[family];return <section className={`gauge-section family-${family}`} key={family}><header><span className="family-mark"><i/></span><div><h3>{meta.label}</h3><p>{meta.description}</p></div><em>{items.length} {items.length===1?'misura':'misure'}</em></header><div className="gauge-deck">{items.map(({measurement,spec}:any)=><RadialGauge key={measurement.key} measurement={measurement} spec={spec}/>)}</div></section>})}</div>{chartGroups[0]&&<div className="cockpit-chart-feature"><AdaptiveChart series={history.filter(item=>chartGroups[0].includes(item.key))} measurements={measurements} title={metricFamilies[familyForKeys(chartGroups[0],measurements)].label}/></div>}</>}
+    {tab==='trends'&&<div className="trend-workspace"><div className="trend-controls"><div><p>ORIZZONTE TEMPORALE</p><span>Storico aggregato con soli campioni validi</span></div><nav>{[{v:1,l:'1 ora'},{v:6,l:'6 ore'},{v:24,l:'24 ore'},{v:168,l:'7 giorni'}].map(period=><button key={period.v} className={hours===period.v?'active':''} onClick={()=>setHours(period.v)}>{period.l}</button>)}</nav></div>{historyLoading?<div className="cockpit-loading"><RefreshCw/>Elaborazione storico…</div>:<div className="adaptive-chart-grid">{chartGroups.map(keys=>{const family=familyForKeys(keys,measurements);return <AdaptiveChart key={keys.join()} series={history.filter(item=>keys.includes(item.key))} measurements={measurements} title={metricFamilies[family].label}/>})}</div>}</div>}
     {tab==='telemetry'&&<MeasurementGrid measurements={measurements} query={query} setQuery={setQuery}/>}
   </section>
 }
@@ -130,8 +170,8 @@ function DeviceLiveCockpit({token,data,query,setQuery}:{token:string,data:any,qu
 function SummaryCard({label,value,unit,icon:Icon,tone='green',detail}:{label:string,value:any,unit:string,icon:any,tone?:string,detail:string}){return <article className={`ops-kpi ${tone}`}><div><span>{label}</span><Icon/></div><strong>{fmt(value,value&&Math.abs(value)<10?2:1)} <small>{value!==null&&value!==undefined?unit:''}</small></strong><p>{detail}</p></article>}
 
 function MeasurementGrid({measurements,query,setQuery}:{measurements:any[],query:string,setQuery:(value:string)=>void}){
-  const groups=useMemo(()=>{const result:Record<string,any[]>={};measurements.filter(item=>(item.label+' '+item.key).toLowerCase().includes(query.toLowerCase())).forEach(item=>(result[item.group||'Misure']??=[]).push(item));return result},[measurements,query])
-  return <section className="ops-section"><header><div><p className="ops-eyebrow">TELEMETRIA NORMALIZZATA</p><h2>Dati live</h2></div><label className="measure-search"><Search/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Cerca misura…" aria-label="Cerca misura"/></label></header>{Object.keys(groups).length?Object.entries(groups).map(([group,items])=><div className="measure-group" key={group}><h3>{group}<span>{items.length}</span></h3><div className="measure-grid">{items.map(item=><article key={item.key}><div><span>{item.label}</span><i className={item.quality==='good'?'good':'bad'} title={item.quality}/></div><strong>{item.display_value||fmt(item.value,Math.abs(item.value)<10?2:1)} <small>{item.unit}</small></strong>{item.display_value&&<em className="raw-state">Codice {fmt(item.value,0)}</em>}<p>{time(item.sample_at)} · {item.quality==='good'?'Dato valido':item.quality}</p></article>)}</div></div>):<div className="ops-empty">Nessuna misura corrisponde alla ricerca.</div>}</section>
+  const groups=useMemo(()=>{const result=new Map<MetricFamily,any[]>();measurements.filter(item=>(item.label+' '+item.key+' '+(item.group||'')).toLowerCase().includes(query.toLowerCase())).forEach(item=>{const family=metricFamily(item.key,item.group);result.set(family,[...(result.get(family)||[]),item])});return Array.from(result.entries())},[measurements,query])
+  return <section className="ops-section measurement-catalog"><header><div><p className="ops-eyebrow">TELEMETRIA NORMALIZZATA</p><h2>Dati live per grandezza</h2></div><label className="measure-search"><Search/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Cerca misura…" aria-label="Cerca misura"/></label></header>{groups.length?groups.map(([family,items])=>{const meta=metricFamilies[family];return <div className={`measure-group family-${family}`} key={family}><div className="measure-group-title"><span className="family-mark"><i/></span><div><h3>{meta.label}<span>{items.length}</span></h3><p>{meta.description}</p></div></div><div className="measure-grid">{items.map(item=><article className={`family-${family}`} key={item.key}><div><span>{item.label}</span><i className={item.quality==='good'?'good':'bad'} title={item.quality}/></div><strong>{item.display_value||fmt(item.value,Math.abs(item.value)<10?2:1)} <small>{item.unit}</small></strong>{item.display_value&&<em className="raw-state">Codice {fmt(item.value,0)}</em>}<p>{time(item.sample_at)} · {item.quality==='good'?'Dato valido':item.quality}</p></article>)}</div></div>}):<div className="ops-empty">Nessuna misura corrisponde alla ricerca.</div>}</section>
 }
 
 function AlarmCenter({token,data,rules,onChanged}:{token:string,data:any,rules:any[],onChanged:()=>void}){
