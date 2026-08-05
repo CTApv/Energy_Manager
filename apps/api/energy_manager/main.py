@@ -423,10 +423,21 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
     devices = list(db.scalars(select(Device).where(Device.status != "removed")))
     open_alarms = db.scalar(select(func.count()).select_from(AlarmEvent).where(AlarmEvent.status.in_(["open", "acknowledged"]))) or 0
     pending = db.scalar(select(func.count()).select_from(SyncOutbox).where(SyncOutbox.sent_at.is_(None))) or 0
-    power = by_key.get("electrical.active_power.total")
-    energy = by_key.get("electrical.energy.import_total")
     profile = db.get(DeviceProfile, main_device.profile_id) if main_device else None
     definition = profile.definition if profile else {}
+    category = definition.get("category", "multimeter")
+    power_key = {
+        "pv_inverter": "pv.power.ac_total",
+        "battery_storage": "storage.power.active",
+        "ev_charger": "ev.power.active",
+    }.get(category, "electrical.active_power.total")
+    energy_key = {
+        "pv_inverter": "pv.energy.today",
+        "battery_storage": "storage.energy.discharge_total",
+        "ev_charger": "ev.energy.session",
+    }.get(category, "electrical.energy.import_total")
+    power = by_key.get(power_key) or by_key.get("electrical.active_power.total")
+    energy = by_key.get(energy_key) or by_key.get("electrical.energy.import_total")
     site = db.scalar(select(LocalSite).limit(1))
     primary_meter = None
     if main_device:
@@ -435,7 +446,7 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
             "name": main_device.name,
             "manufacturer": definition.get("manufacturer", ""),
             "model": definition.get("model", main_device.profile_id),
-            "category": definition.get("category", "multimeter"),
+            "category": category,
             "status": main_device.status,
             "last_valid_poll_at": main_device.last_valid_poll_at,
             "cycle_duration_ms": main_device.cycle_duration_ms,
@@ -455,8 +466,8 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
     for device in devices:
         device_profile = db.get(DeviceProfile, device.profile_id)
         device_definition = device_profile.definition if device_profile else {}
-        device_options.append({"id": device.id, "name": device.name, "manufacturer": device_definition.get("manufacturer", ""), "model": device_definition.get("model", device.profile_id), "status": device.status, "last_valid_poll_at": device.last_valid_poll_at})
-    series = list(db.scalars(select(TelemetrySample).where(TelemetrySample.device_id == main_device.id, TelemetrySample.measurement_key == "electrical.active_power.total").order_by(TelemetrySample.sample_at.desc()).limit(60))) if main_device else []
+        device_options.append({"id": device.id, "name": device.name, "manufacturer": device_definition.get("manufacturer", ""), "model": device_definition.get("model", device.profile_id), "category": device_definition.get("category", "device"), "status": device.status, "last_valid_poll_at": device.last_valid_poll_at})
+    series = list(db.scalars(select(TelemetrySample).where(TelemetrySample.device_id == main_device.id, TelemetrySample.measurement_key == power_key).order_by(TelemetrySample.sample_at.desc()).limit(60))) if main_device else []
     active_events = list(db.scalars(select(AlarmEvent).where(AlarmEvent.status.in_(["open", "acknowledged"])).order_by(AlarmEvent.opened_at.desc()).limit(8)))
     rules_count = db.scalar(select(func.count()).select_from(AlarmRule).where(AlarmRule.active.is_(True))) or 0
     return {
@@ -468,6 +479,8 @@ def dashboard(user: Annotated[User, Depends(current_user)], db: Annotated[Sessio
         "active_rules": rules_count,
         "power_kw": power.value if power else None,
         "energy_kwh": energy.value if energy else None,
+        "primary_power_key": power_key,
+        "primary_energy_key": energy_key,
         "power_factor": by_key.get("electrical.power_factor.total").value if by_key.get("electrical.power_factor.total") else None,
         "frequency_hz": by_key.get("electrical.frequency").value if by_key.get("electrical.frequency") else None,
         "peak_kw": max((s.value for s in series if s.value is not None), default=None),
