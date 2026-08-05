@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  Activity,
-  AlertTriangle,
   BatteryCharging,
   ChevronDown,
   ChevronRight,
@@ -198,26 +196,6 @@ export function EnergyContextRail({ token, onOpenLive }: Props) {
     ],
     [allNodes, data],
   );
-  const observed = useMemo(
-    () =>
-      allNodes
-        .filter((node) => node.meter)
-        .sort((a, b) => {
-          const severity = (node: any) =>
-            node.meter?.status === "offline"
-              ? 3
-              : node.meter?.status === "degraded"
-                ? 2
-                : 0;
-          return (
-            severity(b) - severity(a) ||
-            Math.abs(b.effective_power_kw || 0) -
-              Math.abs(a.effective_power_kw || 0)
-          );
-        })
-        .slice(0, 3),
-    [allNodes],
-  );
   const online = allDevices.filter(
     (device) => device.status === "online",
   ).length;
@@ -232,7 +210,11 @@ export function EnergyContextRail({ token, onOpenLive }: Props) {
           onClick={() => setOpen(false)}
         />
       )}
-      <aside className={`energy-context-rail ${open ? "open" : "closed"}`}>
+      <div
+        className={`energy-context-rail ${open ? "open" : "closed"}`}
+        role="complementary"
+        aria-label="Albero energetico live"
+      >
         <button
           className="energy-rail-toggle"
           onClick={() => setOpen((value) => !value)}
@@ -248,8 +230,8 @@ export function EnergyContextRail({ token, onOpenLive }: Props) {
               <span className="live-pulse">
                 <i /> LIVE · 5 S
               </span>
-              <h2>Contesto energetico</h2>
-              <p>Gerarchia e priorità sempre a portata di mano.</p>
+              <h2>Albero energetico</h2>
+              <p>Flusso monte-valle e misure essenziali.</p>
             </div>
             <button onClick={() => void load()} title="Aggiorna ora">
               <RefreshCw className={loading ? "spin" : ""} />
@@ -333,38 +315,10 @@ export function EnergyContextRail({ token, onOpenLive }: Props) {
                   ))}
                 </section>
               )}
-
-              {!!observed.length && (
-                <section className="energy-rail-section observe-section">
-                  <div className="energy-rail-heading">
-                    <span>Priorità operative</span>
-                    <Activity />
-                  </div>
-                  {observed.map((node) => (
-                    <button key={node.id} onClick={onOpenLive}>
-                      {node.meter?.status === "offline" ||
-                      node.meter?.status === "degraded" ? (
-                        <AlertTriangle />
-                      ) : (
-                        <Zap />
-                      )}
-                      <span>
-                        <b>{node.name}</b>
-                        <small>
-                          {node.meter?.status === "online"
-                            ? "Carico rilevante"
-                            : `Stato ${node.meter?.status}`}
-                        </small>
-                      </span>
-                      <strong>{number(node.effective_power_kw)} kW</strong>
-                    </button>
-                  ))}
-                </section>
-              )}
             </>
           )}
         </div>
-      </aside>
+      </div>
     </>
   );
 }
