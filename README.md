@@ -4,13 +4,14 @@ Energy Manager è una piattaforma open source per il monitoraggio energetico ind
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.3.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e trasforma i contatori in informazioni operative: consumi, potenza, costi, CO₂, budget, confronto temporale, bilancio fotovoltaico e ripartizione per utenza.
+La release `0.4.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e trasforma i contatori in informazioni operative: consumi, potenza, costi, CO₂, budget, confronto temporale, bilancio fotovoltaico e ripartizione per utenza.
 
 ## Cosa offre
 
 - dashboard live dell’intero impianto o del singolo dispositivo;
 - albero energetico modificabile con drag and drop e principio “contatore a monte autorevole”;
 - catalogo Siemens PAC2200, PAC3200 e PAC3220, con varianti Modbus TCP/RTU compatibili;
+- discovery guidata della rete Modbus TCP con rilevamento gateway, Unit ID e suggerimento del profilo;
 - profili estendibili per multimetri, inverter fotovoltaici, accumuli, colonnine e dispositivi di altri produttori;
 - monitoraggio per giorno, settimana, mese e anno con confronto omogeneo col periodo precedente;
 - costi di prelievo, ricavi da immissione, costo netto, emissioni e proiezioni di budget;
@@ -75,10 +76,11 @@ password: EnergyDemo!2026
 Al primo accesso:
 
 1. aprire **Configura impianto** e definire sito, connessione, dispositivi e gerarchia;
-2. associare `electrical.energy.import_total` al contatore generale e alle utenze secondarie;
-3. aprire **Consumi e report → Parametri** e impostare tariffa, fattore CO₂, potenza e budget;
-4. verificare dati e qualità nella **Console dispositivi**;
-5. completare **Commissioning** prima della consegna.
+2. usare **Trova dispositivi** per cercare automaticamente gli slave Modbus TCP oppure configurarli manualmente;
+3. associare `electrical.energy.import_total` al contatore generale e alle utenze secondarie;
+4. aprire **Consumi e costi → Parametri** e impostare tariffa, fattore CO₂, potenza e budget;
+5. verificare dati e qualità nei **Dispositivi live**;
+6. completare **Messa in servizio** prima della consegna.
 
 ## Monitoraggio energetico
 
@@ -120,6 +122,8 @@ La procedura completa è in [docs/commissioning.md](docs/commissioning.md). La s
 ## Modbus e catalogo dispositivi
 
 Il polling è read-only e supporta Modbus TCP e RTU con sessione condivisa per connessione, serializzazione delle richieste, timeout e retry controllati. In questo modo decine di dispositivi sullo stesso gateway non aprono una connessione TCP indipendente ciascuno.
+
+Il pulsante **Impianto e dispositivi → Trova dispositivi** apre un browser di rete simile ai commissioning tool industriali: scansiona una rete privata fino a `/24`, cerca le porte configurate, interroga fino a 32 Unit ID e usa la funzione Modbus Device Identification quando disponibile. Il modello suggerito deve sempre essere confermato dalla targhetta. La discovery non scrive registri e non installa nulla senza conferma. Dettagli e limiti di sicurezza sono in [docs/modbus-discovery.md](docs/modbus-discovery.md).
 
 I profili supportano boolean/bit field, interi 16/32/64 bit, float 32/64, ASCII, byte/word order, scala, offset, enum e misure derivate. La validazione blocca funzioni di scrittura, sovrapposizioni e definizioni incoerenti.
 

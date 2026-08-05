@@ -31,6 +31,7 @@ from .decoder import decode_registers
 from .energy_reporting import build_energy_report, safe_zone
 from .kpi import counter_delta, unattributed_energy
 from .maintenance import backup_file, create_backup, database_integrity, list_backups, maintenance_loop, run_retention, storage_capacity
+from .modbus_discovery import discover_modbus, parse_scan_network, resolved_ipv4
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
     Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergySettings, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
@@ -183,6 +184,23 @@ class EnergySettingsInput(BaseModel):
     workday_start: str = Field(default="08:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     workday_end: str = Field(default="18:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     working_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4], min_length=1, max_length=7)
+
+
+class ModbusDiscoveryInput(BaseModel):
+    network: str = Field(default="192.168.2.0/24", min_length=9, max_length=32)
+    ports: list[int] = Field(default_factory=lambda: [502, 5020], min_length=1, max_length=4)
+    unit_from: int = Field(default=1, ge=0, le=247)
+    unit_to: int = Field(default=10, ge=0, le=247)
+    timeout_seconds: float = Field(default=0.35, ge=0.1, le=2)
+    probe_address: int = Field(default=0, ge=0, le=65535)
+
+
+class ModbusDiscoveredInstallInput(BaseModel):
+    host: str = Field(min_length=7, max_length=15)
+    port: int = Field(ge=1, le=65535)
+    unit_id: int = Field(ge=0, le=247)
+    profile_id: str = Field(min_length=1, max_length=100)
+    device_name: str = Field(min_length=1, max_length=160)
 
 
 @app.get("/api/health")
@@ -704,6 +722,56 @@ def catalog_preview(payload: dict = Body(...), user: User = Depends(current_user
 @app.get("/api/connections")
 def connections(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
     return [as_dict(item) for item in db.scalars(select(Connection))]
+
+
+@app.post("/api/discovery/modbus")
+async def modbus_discovery(data: ModbusDiscoveryInput, request: Request, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    sensitive_rate_limit(request, limit=5, window_seconds=60)
+    try:
+        network = parse_scan_network(data.network)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if data.unit_to < data.unit_from or data.unit_to - data.unit_from + 1 > 32:
+        raise HTTPException(422, "L'intervallo slave deve contenere da 1 a 32 Unit ID consecutivi")
+    if len(set(data.ports)) != len(data.ports) or any(port < 1 or port > 65535 for port in data.ports):
+        raise HTTPException(422, "Le porte devono essere univoche e comprese tra 1 e 65535")
+    profiles = [{"id": item.id, "definition": item.definition} for item in db.scalars(select(DeviceProfile).where(DeviceProfile.valid.is_(True)))]
+    connections_by_id = {item.id: item for item in db.scalars(select(Connection).where(Connection.kind == "modbus_tcp"))}
+    configured = set()
+    for device in db.scalars(select(Device)):
+        connection = connections_by_id.get(device.connection_id)
+        if connection:
+            configured.update((host, int(connection.config.get("port", 502)), device.unit_id) for host in resolved_ipv4(str(connection.config.get("host", ""))))
+    result = await discover_modbus(network, sorted(data.ports), list(range(data.unit_from, data.unit_to + 1)), data.timeout_seconds, data.probe_address, profiles, configured)
+    db.add(AuditEvent(actor=user.username, action="modbus.discovery", target_type="network", target_id=str(network), details={"ports": data.ports, "unit_from": data.unit_from, "unit_to": data.unit_to, "devices_found": result["devices_found"], "elapsed_ms": result["elapsed_ms"]}))
+    db.commit()
+    return result
+
+
+@app.post("/api/discovery/modbus/install")
+def install_discovered_modbus(data: ModbusDiscoveredInstallInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    try:
+        host = str(parse_scan_network(f"{data.host}/32").network_address)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    profile = db.get(DeviceProfile, data.profile_id)
+    if not profile or not profile.valid or "modbus_tcp" not in profile.definition.get("protocols", []):
+        raise HTTPException(422, "Il profilo selezionato non è disponibile per Modbus TCP")
+    connections = list(db.scalars(select(Connection).where(Connection.kind == "modbus_tcp")))
+    connection = next((item for item in connections if host in resolved_ipv4(str(item.config.get("host"))) and int(item.config.get("port", 502)) == data.port), None)
+    created_connection = False
+    if not connection:
+        connection = Connection(name=f"Gateway {host}:{data.port}", kind="modbus_tcp", config={"host": host, "port": data.port, "timeout": 2.0, "retry": 1}, status="online", last_test_at=utcnow())
+        db.add(connection); db.flush(); created_connection = True
+    if db.scalar(select(Device).where(Device.connection_id == connection.id, Device.unit_id == data.unit_id).limit(1)):
+        raise HTTPException(409, "Questo Unit ID è già installato sulla connessione")
+    device = Device(connection_id=connection.id, profile_id=profile.id, name=data.device_name, unit_id=data.unit_id, active=True, status="unknown")
+    db.add(device); db.flush()
+    db.add(AuditEvent(actor=user.username, action="modbus.discovery.install", target_type="device", target_id=device.id, details={"host": host, "port": data.port, "unit_id": data.unit_id, "profile_id": profile.id, "connection_created": created_connection}))
+    db.commit(); db.refresh(device)
+    return {"connection": as_dict(connection), "device": as_dict(device), "connection_created": created_connection}
 
 
 @app.post("/api/connections")
