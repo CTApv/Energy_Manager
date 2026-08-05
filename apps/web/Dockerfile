@@ -1,4 +1,6 @@
-FROM node:22-alpine AS build
+# The Vite output is architecture-independent: build it natively, then copy it
+# into the target-architecture nginx image without QEMU-emulating Node/npm.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
