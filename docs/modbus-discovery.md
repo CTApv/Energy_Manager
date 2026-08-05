@@ -1,4 +1,4 @@
-# Discovery Modbus TCP
+# Discovery Modbus TCP e RTU-over-TCP
 
 La discovery assiste il tecnico durante la messa in servizio. Non sostituisce il progetto della rete, la documentazione del costruttore o la verifica sul quadro.
 
@@ -6,7 +6,8 @@ La discovery assiste il tecnico durante la messa in servizio. Non sostituisce il
 
 1. Aprire **Impianto e dispositivi → Trova dispositivi**.
 2. Inserire la subnet, normalmente `/24`, e le porte TCP da controllare.
-3. Limitare l’intervallo Unit ID a quello effettivamente utilizzato.
+3. Limitare l’intervallo Unit ID a quello effettivamente utilizzato per la sola fase di rilevamento.
+4. In fase di installazione indicare se l'endpoint è un dispositivo TCP diretto oppure un gateway RTU-over-TCP. Nel primo caso IP e porta vengono salvati sul dispositivo e lo Unit ID non viene esposto nelle configurazioni successive; nel secondo il gateway viene condiviso e lo Unit ID resta l'indirizzo dello slave.
 4. Avviare la scansione e verificare gli endpoint che rispondono come Modbus.
 5. Confrontare produttore, modello, variante di comunicazione e firmware con la targhetta.
 6. Scegliere il profilo e assegnare un nome comprensibile nell’impianto.

@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from .auth import create_token, current_user, hash_password, require_roles, verify_password
 from .catalog import expand_catalog_document, next_copy_id, parse_profile, validate_profile
-from .commissioning import commissioning_report, validate_connection_config
+from .commissioning import commissioning_report, validate_connection_config, validate_device_connection_config
 from .config import get_settings
 from .db import Base, SessionLocal, engine, get_db
 from .decoder import decode_registers
@@ -132,7 +132,8 @@ class DeviceInput(BaseModel):
     connection_id: str
     profile_id: str
     name: str = Field(min_length=1, max_length=160)
-    unit_id: int = Field(ge=0, le=247)
+    unit_id: int | None = Field(default=None, ge=0, le=247)
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProvisioningPlacementInput(BaseModel):
@@ -221,6 +222,7 @@ class ModbusDiscoveredInstallInput(BaseModel):
     unit_id: int = Field(ge=0, le=247)
     profile_id: str = Field(min_length=1, max_length=100)
     device_name: str = Field(min_length=1, max_length=160)
+    transport: str = Field(default="modbus_tcp", pattern="^(modbus_tcp|modbus_rtu_tcp)$")
 
 
 class DeviceRemovalInput(BaseModel):
@@ -542,11 +544,32 @@ def operations_tree(user: User = Depends(current_user), db: Session = Depends(ge
     for device in devices:
         profile = db.get(DeviceProfile, device.profile_id)
         definition = profile.definition if profile else {}
-        power, power_at, power_quality = latest_value(device.id, "electrical.active_power.total")
-        energy, energy_at, energy_quality = latest_value(device.id, "electrical.energy.import_total")
+        category = definition.get("category", "device")
+        power_key = {
+            "pv_inverter": "pv.power.ac_total",
+            "battery_storage": "storage.power.active",
+            "ev_charger": "ev.power.active",
+        }.get(category, "electrical.active_power.total")
+        energy_keys = {
+            "pv_inverter": ["pv.energy.total", "pv.energy.today"],
+            "battery_storage": ["storage.energy.discharge_total"],
+            "ev_charger": ["ev.energy.total", "ev.energy.session"],
+        }.get(category, ["electrical.energy.import_total"])
+        power, power_at, power_quality = latest_value(device.id, power_key)
+        energy = energy_at = None
+        energy_quality = "missing"
+        energy_key = energy_keys[0]
+        for candidate_key in energy_keys:
+            candidate, candidate_at, candidate_quality = latest_value(device.id, candidate_key)
+            if candidate is not None:
+                energy, energy_at, energy_quality, energy_key = candidate, candidate_at, candidate_quality, candidate_key
+                break
+        # Some vendor drivers expose only the normalized electrical fallback.
+        if power is None and power_key != "electrical.active_power.total":
+            power, power_at, power_quality = latest_value(device.id, "electrical.active_power.total")
         period_start_sample = db.scalar(select(TelemetrySample).where(
             TelemetrySample.device_id == device.id,
-            TelemetrySample.measurement_key == "electrical.energy.import_total",
+            TelemetrySample.measurement_key == energy_key,
             TelemetrySample.sample_at >= utcnow() - timedelta(hours=24),
             TelemetrySample.quality == "good",
         ).order_by(TelemetrySample.sample_at).limit(1))
@@ -555,10 +578,11 @@ def operations_tree(user: User = Depends(current_user), db: Session = Depends(ge
             energy_24h = counter_delta(float(period_start_sample.value), float(energy)).value
         device_stats[device.id] = {
             "id": device.id, "name": device.name, "manufacturer": definition.get("manufacturer", ""),
-            "model": definition.get("model", device.profile_id), "status": device.status,
+            "model": definition.get("model", device.profile_id), "category": category, "status": device.status,
             "power_kw": power, "energy_kwh": energy, "sample_at": power_at or energy_at,
             "energy_24h_kwh": energy_24h,
             "quality": power_quality if power is not None else energy_quality,
+            "power_key": power_key, "energy_key": energy_key,
         }
 
     children_by_parent: dict[str | None, list[AssetNode]] = defaultdict(list)
@@ -854,12 +878,17 @@ async def modbus_discovery(data: ModbusDiscoveryInput, request: Request, user: U
     if len(set(data.ports)) != len(data.ports) or any(port < 1 or port > 65535 for port in data.ports):
         raise HTTPException(422, "Le porte devono essere univoche e comprese tra 1 e 65535")
     profiles = [{"id": item.id, "definition": item.definition} for item in db.scalars(select(DeviceProfile).where(DeviceProfile.valid.is_(True)))]
-    connections_by_id = {item.id: item for item in db.scalars(select(Connection).where(Connection.kind == "modbus_tcp"))}
+    connections_by_id = {
+        item.id: item
+        for item in db.scalars(select(Connection).where(Connection.kind.in_(["modbus_tcp", "modbus_rtu_tcp"])))
+    }
     configured = set()
     for device in db.scalars(select(Device).where(Device.status != "removed")):
         connection = connections_by_id.get(device.connection_id)
         if connection:
-            configured.update((host, int(connection.config.get("port", 502)), device.unit_id) for host in resolved_ipv4(str(connection.config.get("host", ""))))
+            endpoint = device.config if connection.kind == "modbus_tcp" and device.config else connection.config
+            unit_id = int((device.config or {}).get("protocol_unit_id", device.unit_id)) if connection.kind == "modbus_tcp" else device.unit_id
+            configured.update((host, int(endpoint.get("port", 502)), unit_id) for host in resolved_ipv4(str(endpoint.get("host", ""))))
     result = await discover_modbus(network, sorted(data.ports), list(range(data.unit_from, data.unit_to + 1)), data.timeout_seconds, data.probe_address, profiles, configured)
     db.add(AuditEvent(actor=user.username, action="modbus.discovery", target_type="network", target_id=str(network), details={"ports": data.ports, "unit_from": data.unit_from, "unit_to": data.unit_to, "devices_found": result["devices_found"], "elapsed_ms": result["elapsed_ms"]}))
     db.commit()
@@ -874,19 +903,33 @@ def install_discovered_modbus(data: ModbusDiscoveredInstallInput, user: User = D
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     profile = db.get(DeviceProfile, data.profile_id)
-    if not profile or not profile.valid or "modbus_tcp" not in profile.definition.get("protocols", []):
-        raise HTTPException(422, "Il profilo selezionato non è disponibile per Modbus TCP")
-    connections = list(db.scalars(select(Connection).where(Connection.kind == "modbus_tcp")))
-    connection = next((item for item in connections if host in resolved_ipv4(str(item.config.get("host"))) and int(item.config.get("port", 502)) == data.port), None)
+    required_protocol = "modbus_tcp" if data.transport == "modbus_tcp" else "modbus_rtu"
+    if not profile or not profile.valid or required_protocol not in profile.definition.get("protocols", []):
+        raise HTTPException(422, "Il driver selezionato non supporta il trasporto rilevato")
+    connections = list(db.scalars(select(Connection).where(Connection.kind == data.transport)))
+    if data.transport == "modbus_tcp":
+        connection = next((item for item in connections if not item.config.get("host")), None)
+    else:
+        connection = next((item for item in connections if host in resolved_ipv4(str(item.config.get("host"))) and int(item.config.get("port", 502)) == data.port), None)
     created_connection = False
     if not connection:
-        connection = Connection(name=f"Gateway {host}:{data.port}", kind="modbus_tcp", config={"host": host, "port": data.port, "timeout": 2.0, "retry": 1}, status="online", last_test_at=utcnow())
+        if data.transport == "modbus_tcp":
+            connection = Connection(name="Rete dispositivi Modbus TCP", kind="modbus_tcp", config={"port": 502, "timeout": 2.0, "retry": 1}, status="online", last_test_at=utcnow())
+        else:
+            connection = Connection(name=f"Gateway RTU {host}:{data.port}", kind="modbus_rtu_tcp", config={"host": host, "port": data.port, "timeout": 2.0, "retry": 1}, status="online", last_test_at=utcnow())
         db.add(connection); db.flush(); created_connection = True
-    if db.scalar(select(Device).where(Device.connection_id == connection.id, Device.unit_id == data.unit_id, Device.status != "removed").limit(1)):
-        raise HTTPException(409, "Questo Unit ID è già installato sulla connessione")
-    device = Device(connection_id=connection.id, profile_id=profile.id, name=data.device_name, unit_id=data.unit_id, active=True, status="unknown")
+    device_input = DeviceInput(
+        connection_id=connection.id,
+        profile_id=profile.id,
+        name=data.device_name,
+        unit_id=data.unit_id if data.transport == "modbus_rtu_tcp" else None,
+        config={"host": host, "port": data.port, "protocol_unit_id": data.unit_id} if data.transport == "modbus_tcp" else {},
+    )
+    values = _normalized_device_values(device_input, connection, profile)
+    _assert_device_address_available(db, connection, values)
+    device = Device(**values, active=True, status="unknown")
     db.add(device); db.flush()
-    db.add(AuditEvent(actor=user.username, action="modbus.discovery.install", target_type="device", target_id=device.id, details={"host": host, "port": data.port, "unit_id": data.unit_id, "profile_id": profile.id, "connection_created": created_connection}))
+    db.add(AuditEvent(actor=user.username, action="modbus.discovery.install", target_type="device", target_id=device.id, details={"host": host, "port": data.port, "unit_id": data.unit_id, "transport": data.transport, "profile_id": profile.id, "connection_created": created_connection}))
     db.commit(); db.refresh(device)
     return {"connection": as_dict(connection), "device": as_dict(device), "connection_created": created_connection}
 
@@ -906,6 +949,8 @@ def update_connection(connection_id: str, data: ConnectionInput, user: User = De
     except (ValueError, TypeError) as exc: raise HTTPException(422, str(exc)) from exc
     item = db.get(Connection, connection_id)
     if not item: raise HTTPException(404, "Connection not found")
+    if item.kind != data.kind and db.scalar(select(Device.id).where(Device.connection_id == connection_id, Device.status != "removed").limit(1)):
+        raise HTTPException(409, "Rimuovere o spostare i dispositivi prima di cambiare il tipo di canale")
     item.name = data.name; item.kind = data.kind; item.config = config
     item.status = "unknown"; item.last_error = None
     db.add(AuditEvent(actor=user.username, action="connection.update", target_type="connection", target_id=item.id, details={"name": item.name, "kind": item.kind}))
@@ -938,17 +983,74 @@ def devices(user: User = Depends(current_user), db: Session = Depends(get_db)) -
     return [as_dict(item) for item in db.scalars(select(Device).where(Device.status != "removed").order_by(Device.name))]
 
 
+def _profile_protocol(connection_kind: str) -> str:
+    return "modbus_rtu" if connection_kind in {"modbus_rtu", "modbus_rtu_tcp"} else "modbus_tcp"
+
+
+def _normalized_device_values(data: DeviceInput, connection: Connection, profile: DeviceProfile) -> dict[str, Any]:
+    required_protocol = _profile_protocol(connection.kind)
+    if required_protocol not in profile.definition.get("protocols", []):
+        raise HTTPException(422, f"Il driver {data.profile_id} non supporta il trasporto selezionato")
+    if connection.kind == "modbus_tcp":
+        try:
+            config = validate_device_connection_config(
+                connection.kind,
+                data.config,
+                int(connection.config.get("port", 502)),
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        unit_id = int(config.get("protocol_unit_id", profile.definition.get("defaults", {}).get("unit_id", 1)))
+    else:
+        if data.unit_id is None:
+            raise HTTPException(422, "Lo Unit ID è obbligatorio per RTU e RTU-over-TCP")
+        unit_id = data.unit_id
+        config = {}
+    return {
+        "connection_id": data.connection_id,
+        "profile_id": data.profile_id,
+        "name": data.name,
+        "unit_id": unit_id,
+        "config": config,
+    }
+
+
+def _assert_device_address_available(db: Session, connection: Connection, values: dict[str, Any], exclude_id: str | None = None) -> None:
+    devices = list(db.scalars(select(Device).where(Device.status != "removed")))
+    if exclude_id:
+        devices = [device for device in devices if device.id != exclude_id]
+    if connection.kind == "modbus_tcp":
+        endpoint = (values["config"].get("host", "").lower(), int(values["config"].get("port", 502)))
+        for device in devices:
+            device_connection = db.get(Connection, device.connection_id)
+            if not device_connection or device_connection.kind != "modbus_tcp":
+                continue
+            existing_config = device.config or device_connection.config
+            existing = (str(existing_config.get("host", "")).lower(), int(existing_config.get("port", 502)))
+            if existing == endpoint:
+                raise HTTPException(409, "Questo endpoint IP è già assegnato a un dispositivo Modbus TCP")
+        return
+    duplicate = next(
+        (
+            device
+            for device in devices
+            if device.connection_id == connection.id and device.unit_id == values["unit_id"]
+        ),
+        None,
+    )
+    if duplicate:
+        raise HTTPException(409, "Unit ID già configurato su questo bus")
+
+
 @app.post("/api/devices")
 def create_device(data: DeviceInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
     connection = db.get(Connection, data.connection_id)
     profile = db.get(DeviceProfile, data.profile_id)
     if not connection or not profile:
         raise HTTPException(422, "Unknown connection or profile")
-    if connection.kind not in profile.definition.get("protocols", []):
-        raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
-    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.status != "removed").limit(1)):
-        raise HTTPException(409, "Unit ID already configured on this connection")
-    item = Device(**data.model_dump()); db.add(item); db.flush()
+    values = _normalized_device_values(data, connection, profile)
+    _assert_device_address_available(db, connection, values)
+    item = Device(**values); db.add(item); db.flush()
     db.add(AuditEvent(actor=user.username, action="device.create", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
     db.commit(); return as_dict(item)
 
@@ -960,17 +1062,8 @@ def provision_device(data: DeviceProvisioningInput, user: User = Depends(require
     profile = db.get(DeviceProfile, data.device.profile_id)
     if not connection or not profile:
         raise HTTPException(422, "Connessione o driver non trovato")
-    if connection.kind not in profile.definition.get("protocols", []):
-        raise HTTPException(422, "Il driver selezionato non supporta questa connessione")
-    duplicate = db.scalar(
-        select(Device).where(
-            Device.connection_id == data.device.connection_id,
-            Device.unit_id == data.device.unit_id,
-            Device.status != "removed",
-        ).limit(1)
-    )
-    if duplicate:
-        raise HTTPException(409, "Unit ID già configurato su questa connessione")
+    device_values = _normalized_device_values(data.device, connection, profile)
+    _assert_device_address_available(db, connection, device_values)
 
     available_keys = {
         point.get("key")
@@ -1005,7 +1098,7 @@ def provision_device(data: DeviceProvisioningInput, user: User = Depends(require
         db.add(asset)
         db.flush()
 
-    device = Device(**data.device.model_dump(), active=True, status="unknown")
+    device = Device(**device_values, active=True, status="unknown")
     db.add(device)
     db.flush()
     binding = MeasurementBinding(
@@ -1043,11 +1136,9 @@ def update_device(device_id: str, data: DeviceInput, user: User = Depends(requir
     connection = db.get(Connection, data.connection_id)
     profile = db.get(DeviceProfile, data.profile_id)
     if not connection or not profile: raise HTTPException(422, "Unknown connection or profile")
-    if connection.kind not in profile.definition.get("protocols", []):
-        raise HTTPException(422, f"Profile {data.profile_id} does not support {connection.kind}")
-    if db.scalar(select(Device).where(Device.connection_id == data.connection_id, Device.unit_id == data.unit_id, Device.id != device_id, Device.status != "removed").limit(1)):
-        raise HTTPException(409, "Unit ID already configured on this connection")
-    for key, value in data.model_dump().items(): setattr(item, key, value)
+    values = _normalized_device_values(data, connection, profile)
+    _assert_device_address_available(db, connection, values, exclude_id=device_id)
+    for key, value in values.items(): setattr(item, key, value)
     item.status = "unknown"; item.last_error = None; item.consecutive_errors = 0
     db.add(AuditEvent(actor=user.username, action="device.update", target_type="device", target_id=item.id, details={"name": item.name, "profile_id": item.profile_id, "unit_id": item.unit_id}))
     db.commit(); return as_dict(item)

@@ -74,6 +74,32 @@ def seed_catalog(db: Session, edge_mode: bool) -> dict[str, dict]:
     return definitions
 
 
+def migrate_legacy_tcp_connections(db: Session) -> None:
+    """Preserve pre-0.8 endpoint semantics while separating TCP devices from shared gateways."""
+    for connection in db.scalars(select(Connection).where(Connection.kind == "modbus_tcp")):
+        host = str(connection.config.get("host", "")).strip()
+        if not host:
+            continue
+        devices = list(
+            db.scalars(
+                select(Device).where(
+                    Device.connection_id == connection.id,
+                    Device.status != "removed",
+                )
+            )
+        )
+        if len(devices) > 1:
+            connection.kind = "modbus_rtu_tcp"
+            continue
+        for device in devices:
+            if not device.config:
+                device.config = {
+                    "host": host,
+                    "port": int(connection.config.get("port", 502)),
+                    "protocol_unit_id": device.unit_id,
+                }
+
+
 def seed_database(db: Session, settings: Settings) -> None:
     if not db.scalar(select(User).limit(1)):
         db.add_all([Role(name=name) for name in ["platform_admin", "technician", "customer_admin", "operator", "viewer"]])
@@ -85,6 +111,8 @@ def seed_database(db: Session, settings: Settings) -> None:
         db.add(site); db.flush()
         db.add(Edge(id="00000000-0000-4000-8000-000000000001", site_id=site.id, name="EM-DEMO-001", hostname="em-demo-001", status="offline", token_hash=hash_password(settings.edge_token)))
     definitions = seed_catalog(db, settings.mode == "edge")
+    if settings.mode == "edge":
+        migrate_legacy_tcp_connections(db)
     if settings.mode == "edge" and not db.scalar(select(EnergySettings).limit(1)):
         db.add(EnergySettings(
             import_price_per_kwh=0.24 if settings.seed_demo else 0.0,

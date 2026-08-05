@@ -5,10 +5,22 @@
 Il provisioning distingue tre oggetti che non devono essere confusi:
 
 1. la **rete dell'Edge** (schede Ethernet, indirizzi e DNS);
-2. i **canali industriali** (endpoint Modbus TCP o bus seriali Modbus RTU);
+2. i **canali industriali** (politica TCP, bus seriali RTU o gateway RTU-over-TCP);
 3. la **struttura energetica** (punto di consegna, quadri, reparti, linee e utenze).
 
-Un dispositivo appartiene a un canale di comunicazione e viene collocato su un nodo dell'albero tramite una misura normalizzata. Il comando **Aggiungi dispositivo** svolge queste operazioni in un unico percorso guidato: modello/driver, connessione, Unit ID, posizione nell'albero e verifica finale. Il salvataggio è atomico, quindi un errore non lascia dispositivi senza posizione o associazioni incomplete.
+Un dispositivo appartiene a un canale di comunicazione e viene collocato su un nodo dell'albero tramite una misura normalizzata. Il comando **Aggiungi dispositivo** svolge queste operazioni in un unico percorso guidato: modello/driver, indirizzamento coerente con il trasporto, posizione nell'albero e verifica finale. Il salvataggio è atomico, quindi un errore non lascia dispositivi senza posizione o associazioni incomplete.
+
+## Regole di indirizzamento Modbus
+
+| Trasporto | Configurato sul canale | Configurato sul dispositivo | Condivisione |
+|---|---|---|---|
+| Modbus TCP diretto | porta predefinita, timeout e retry | IP/hostname e porta | un endpoint e una sessione per dispositivo; Unit ID nascosto e gestito dal driver |
+| Modbus RTU / RS485 | porta seriale, baud rate, parità e timeout | Unit ID | più dispositivi sullo stesso bus seriale |
+| Modbus RTU-over-TCP | IP/porta del gateway, timeout e retry | Unit ID | più dispositivi dietro lo stesso gateway TCP |
+
+La coppia IP/porta deve essere univoca tra i dispositivi TCP diretti. Lo Unit ID deve invece essere univoco soltanto all'interno del relativo bus RTU o gateway RTU-over-TCP.
+
+Il pannello richiudibile **Contesto energetico**, disponibile sul lato destro di tutte le viste Edge, mostra l'albero monte-valle, i totali autorevoli, lo stato dei dispositivi e le priorità operative. Non sostituisce l'editor: è una vista live persistente che permette di passare rapidamente ai dati di dettaglio.
 
 La modifica successiva della gerarchia resta disponibile nell'editor drag and drop. In questo modo il modello Siemens, o di qualunque altro costruttore, non modifica la semantica usata dalle dashboard.
 

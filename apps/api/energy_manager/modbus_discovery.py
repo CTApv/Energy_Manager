@@ -58,12 +58,13 @@ def profile_candidates(identity: dict[str, str], profiles: list[dict[str, Any]])
     candidates = []
     for profile in profiles:
         definition = profile.get("definition", profile)
-        if "modbus_tcp" not in definition.get("protocols", []):
+        protocols = definition.get("protocols", [])
+        if not ({"modbus_tcp", "modbus_rtu"} & set(protocols)):
             continue
         manufacturer = str(definition.get("manufacturer", ""))
         model = str(definition.get("model", profile.get("id", "")))
         score = 0.35
-        reasons = ["mappa Modbus TCP compatibile"]
+        reasons = ["mappa registri Modbus compatibile"]
         if manufacturer and manufacturer.lower() in vendor:
             score = 0.72
             reasons.append("produttore identificato")
@@ -76,6 +77,7 @@ def profile_candidates(identity: dict[str, str], profiles: list[dict[str, Any]])
             "manufacturer": manufacturer,
             "model": model,
             "category": definition.get("category", "device"),
+            "protocols": protocols,
             "confidence": round(score, 2),
             "reason": ", ".join(reasons),
         })

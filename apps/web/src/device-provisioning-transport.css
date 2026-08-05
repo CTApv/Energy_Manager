@@ -1,0 +1,36 @@
+.tcp-address-note {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid #cde9dc;
+  border-radius: 10px;
+  background: #effaf5;
+  color: #187b5b;
+}
+.tcp-address-note > svg {
+  width: 18px;
+  flex: 0 0 auto;
+}
+.tcp-address-note > span {
+  display: flex;
+  flex-direction: column;
+}
+.tcp-address-note b {
+  font-size: 9px;
+}
+.tcp-address-note small {
+  margin-top: 3px;
+  color: #5e8274;
+  font-size: 8px;
+  line-height: 1.45;
+}
+html[data-theme="dark"] .tcp-address-note {
+  border-color: #285b49;
+  background: #12382d;
+  color: #64dbae;
+}
+html[data-theme="dark"] .tcp-address-note small {
+  color: #9ab8ad;
+}

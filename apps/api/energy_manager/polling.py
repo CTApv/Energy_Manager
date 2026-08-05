@@ -16,10 +16,10 @@ from .decoder import decode_registers
 from .models import Connection, Device, DeviceProfile, SyncOutbox, TelemetrySample
 
 
-# A Modbus TCP gateway is commonly a scarce resource.  Keep one transport per
-# configured connection and serialize all of its Unit IDs on that transport.
-# Opening a socket for every device/cycle caused connection storms and, on
-# slower gateways, late replies being matched with the next transaction.
+# Direct TCP devices own an independent endpoint/session. RTU serial buses and
+# RTU-over-TCP gateways instead share one transport and serialize their Unit IDs.
+# This avoids connection storms and prevents late gateway replies from being
+# matched with a subsequent transaction.
 _clients: dict[str, Any] = {}
 _client_signatures: dict[str, tuple[Any, ...]] = {}
 _connection_locks: dict[str, asyncio.Lock] = {}
@@ -27,8 +27,22 @@ _device_cycles: dict[str, int] = {}
 settings = get_settings()
 
 
-def _signature(connection: Connection) -> tuple[Any, ...]:
-    config = connection.config
+def _client_key(connection: Connection, device: Device) -> str:
+    return device.id if connection.kind == "modbus_tcp" else connection.id
+
+
+def _effective_config(connection: Connection, device: Device) -> dict[str, Any]:
+    if connection.kind != "modbus_tcp":
+        return connection.config
+    endpoint = device.config or {}
+    return {
+        **connection.config,
+        **endpoint,
+    }
+
+
+def _signature(connection: Connection, device: Device) -> tuple[Any, ...]:
+    config = _effective_config(connection, device)
     return (
         connection.kind,
         config.get("host"), config.get("port"), config.get("baud_rate"),
@@ -37,9 +51,9 @@ def _signature(connection: Connection) -> tuple[Any, ...]:
     )
 
 
-def _new_client(connection: Connection):
-    config = connection.config
-    if connection.kind == "modbus_tcp":
+def _new_client(connection: Connection, device: Device):
+    config = _effective_config(connection, device)
+    if connection.kind in {"modbus_tcp", "modbus_rtu_tcp"}:
         return AsyncModbusTcpClient(
             config["host"],
             port=int(config.get("port", 502)),
@@ -59,15 +73,16 @@ def _new_client(connection: Connection):
     return None
 
 
-def _pooled_client(connection: Connection):
-    signature = _signature(connection)
-    client = _clients.get(connection.id)
-    if client is None or _client_signatures.get(connection.id) != signature:
+def _pooled_client(connection: Connection, device: Device):
+    key = _client_key(connection, device)
+    signature = _signature(connection, device)
+    client = _clients.get(key)
+    if client is None or _client_signatures.get(key) != signature:
         if client is not None:
             client.close()
-        client = _new_client(connection)
-        _clients[connection.id] = client
-        _client_signatures[connection.id] = signature
+        client = _new_client(connection, device)
+        _clients[key] = client
+        _client_signatures[key] = signature
     return client
 
 
@@ -149,7 +164,6 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
             return 0
         connection = db.get(Connection, device.connection_id)
         profile = db.get(DeviceProfile, device.profile_id)
-        config = connection.config
         points = profile.definition["points"]
         if scheduled:
             cycle = _device_cycles.get(device_id, 0)
@@ -158,19 +172,25 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
             if cycle % 6 == 0: due_groups.add("normal")
             if cycle % 60 == 0: due_groups.add("slow")
             points = [point for point in points if point.get("polling_group", "normal") in due_groups]
-    if connection.kind not in {"modbus_tcp", "modbus_rtu"}:
+    if connection.kind not in {"modbus_tcp", "modbus_rtu", "modbus_rtu_tcp"}:
         return 0
     samples: list[dict[str, Any]] = []
     error: str | None = None
-    lock = _connection_locks.setdefault(connection.id, asyncio.Lock())
+    client_key = _client_key(connection, device)
+    lock = _connection_locks.setdefault(client_key, asyncio.Lock())
     async with lock:
-        client = _pooled_client(connection)
+        client = _pooled_client(connection, device)
         try:
             if not client.connected and not await client.connect():
                 raise ConnectionError("Modbus connection failed")
             base = int(profile.definition.get("address_base", 0))
             for block in build_read_blocks(points):
-                response = await _read(client, block["function_code"], block["start"] - base, block["end"] - block["start"], device.unit_id)
+                protocol_unit_id = (
+                    int((device.config or {}).get("protocol_unit_id", profile.definition.get("defaults", {}).get("unit_id", 1)))
+                    if connection.kind == "modbus_tcp"
+                    else device.unit_id
+                )
+                response = await _read(client, block["function_code"], block["start"] - base, block["end"] - block["start"], protocol_unit_id)
                 if response.isError():
                     raise IOError(str(response))
                 values = response.bits if block["function_code"] in {1, 2} else response.registers
@@ -187,8 +207,8 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
             # Pymodbus closes the transport on transaction mismatch/timeouts.
             # Discard only dead clients; healthy persistent sessions stay open.
             if not client.connected:
-                _clients.pop(connection.id, None)
-                _client_signatures.pop(connection.id, None)
+                _clients.pop(client_key, None)
+                _client_signatures.pop(client_key, None)
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         device = db.get(Device, device_id)
