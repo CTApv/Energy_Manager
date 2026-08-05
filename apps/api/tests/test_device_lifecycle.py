@@ -56,7 +56,6 @@ def test_guided_provisioning_creates_device_asset_and_primary_binding_atomically
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     db = Session(engine)
-    connection = Connection(name="Gateway", kind="modbus_tcp", config={"host": "192.168.2.108", "port": 5020})
     profile = DeviceProfile(
         id="test-meter",
         version="1",
@@ -67,19 +66,20 @@ def test_guided_provisioning_creates_device_asset_and_primary_binding_atomically
         valid=True,
     )
     user = User(username="commissioner", password_hash="unused", role="technician")
-    db.add_all([connection, profile, user])
+    db.add_all([profile, user])
     db.flush()
 
     result = provision_device(
         DeviceProvisioningInput(
             device=DeviceInput(
-                connection_id=connection.id,
+                connection_id="",
                 profile_id=profile.id,
                 name="Contatore generale",
                 config={"host": "192.168.2.108", "port": 5020},
             ),
             placement=ProvisioningPlacementInput(name="Punto di consegna", category="grid"),
             measurement_key="electrical.active_power.total",
+            auto_connection_kind="modbus_tcp",
         ),
         user,
         db,
@@ -88,6 +88,8 @@ def test_guided_provisioning_creates_device_asset_and_primary_binding_atomically
     assert result["device"]["name"] == "Contatore generale"
     assert result["asset"]["category"] == "grid"
     assert result["binding"]["role"] == "primary"
+    assert result["connection_created"] is True
+    assert db.scalar(select(Connection).where(Connection.kind == "modbus_tcp")) is not None
     assert db.scalar(select(Device).where(Device.name == "Contatore generale")) is not None
     assert db.scalar(select(MeasurementBinding).where(MeasurementBinding.device_id == result["device"]["id"])) is not None
     db.close()
