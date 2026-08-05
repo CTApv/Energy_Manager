@@ -1,10 +1,10 @@
 # Energy Manager
 
-Energy Manager è una piattaforma open source per il monitoraggio energetico industriale, composta da un **Edge autonomo installato in impianto** e da una **Control Room opzionale** che concentra più Edge senza sostituirne le funzioni locali.
+Energy Manager è una piattaforma open source per la gestione energetica di abitazioni evolute e piccoli impianti, composta da un **Edge autonomo installato sul posto** e da una **Control Room opzionale** che concentra più Edge senza sostituirne le funzioni locali.
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.5.1` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e aggiunge un provisioning Edge ordinato per impianto, comunicazioni e amministrazione.
+La release `0.6.0` introduce Home Energy OS: un'esperienza orientata a fotovoltaico, accumulo, ricarica EV e consumi domestici, navigazione realmente adattata ai privilegi e rimozione sicura dei dispositivi con conservazione opzionale dello storico.
 
 ## Sviluppo e manutenzione
 
@@ -27,7 +27,7 @@ I riferimenti completi e l'ambito dei crediti sono riportati in [CREDITS.md](CRE
 - ripartizione dei consumi per utenza, quota non attribuita e consumi fuori orario;
 - storico interrogabile, grafici per grandezza ed export CSV compatibile con Excel;
 - soglie con isteresi, severità, presa visione, chiusura e audit;
-- utenti e ruoli, backup verificabili, retention e checklist di commissioning;
+- interfaccia e azioni adattate al ruolo, backup verificabili, retention e checklist di commissioning;
 - funzionamento Edge anche senza Internet, con outbox e sincronizzazione successiva;
 - immagini Docker multi-arch `linux/amd64` e `linux/arm64`.
 
@@ -143,7 +143,21 @@ La configurazione è separata in percorsi coerenti con il lavoro del tecnico e d
 - **Stato sistema**: release, host, database, storage e capacità locale;
 - **Verifica commissioning**: controllo conclusivo prima della consegna.
 
-La rimozione di un dispositivo è protetta da un'analisi preventiva dell'impatto e dalla conferma del nome. Per impostazione predefinita il dispositivo viene dismesso dalla configurazione attiva, le sue associazioni vengono rimosse solo con consenso esplicito e lo storico rimane conservato. La cancellazione definitiva dei campioni è un'opzione separata e irreversibile.
+La rimozione mostra prima l'impatto e richiede una sola conferma. Le associazioni nell'albero vengono scollegate automaticamente; l'utente sceglie chiaramente se conservare lo storico per analisi e confronti futuri (opzione consigliata) oppure cancellare definitivamente tutti i campioni.
+
+## Ruoli ed esperienza adattiva
+
+La sicurezza non si limita a disabilitare i pulsanti: ogni sessione vede solo le sezioni utili al proprio incarico e le API applicano nuovamente l'autorizzazione sul server.
+
+| Ruolo | Esperienza principale |
+|---|---|
+| Visualizzatore | Dashboard, live, storico, KPI e allarmi in sola consultazione |
+| Operatore | Consultazione operativa e presa in carico degli eventi consentiti |
+| Amministratore cliente | Monitoraggio, preferenze, stato Edge, conformità e gestione utenti |
+| Tecnico | Provisioning, comunicazioni, catalogo, regole, diagnostica e commissioning |
+| Amministratore piattaforma | Accesso completo, inclusa governance e gestione remota |
+
+Le voci non autorizzate non vengono inserite nel menu. Se un ruolo cambia durante una nuova sessione, la navigazione viene ricostruita e un'eventuale pagina non più consentita viene sostituita dalla dashboard.
 
 I profili IPv4 delle schede rilevate possono essere preparati da **Comunicazioni → Rete Edge**. Il profilo viene conservato e marcato come in attesa di applicazione: l'applicazione sul sistema operativo richiede il servizio host Edge e resta disabilitata nei normali container (`EM_NETWORK_MANAGEMENT_ENABLED=false`) per evitare modifiche accidentali all'interfaccia dalla quale è aperta la sessione.
 

@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from energy_manager.main import DeviceRemovalInput, delete_device, device_removal_impact
-from energy_manager.models import Base, Connection, Device, DeviceProfile, MeasurementBinding, TelemetrySample, User, utcnow
+from energy_manager.models import AssetNode, Base, Connection, Device, DeviceProfile, MeasurementBinding, TelemetrySample, User, utcnow
 
 
 def lifecycle_session() -> tuple[Session, Device, User]:
@@ -15,6 +15,9 @@ def lifecycle_session() -> tuple[Session, Device, User]:
     db.add_all([connection, profile, user]); db.flush()
     device = Device(connection_id=connection.id, profile_id=profile.id, name="Contatore linea", unit_id=7)
     db.add(device); db.flush()
+    asset = AssetNode(name="Casa", category="site")
+    db.add(asset); db.flush()
+    db.add(MeasurementBinding(asset_id=asset.id, device_id=device.id, measurement_key="electrical.active_power.total", role="primary"))
     db.add(TelemetrySample(device_id=device.id, measurement_key="electrical.active_power.total", value=12.5, unit="kW", sample_at=utcnow()))
     db.commit()
     return db, device, user
@@ -24,16 +27,18 @@ def test_removal_preserves_history_by_default():
     db, device, user = lifecycle_session()
     impact = device_removal_impact(device.id, user, db)
     assert impact["samples"] == 1 and impact["history_preserved_by_default"] is True
-    result = delete_device(device.id, DeviceRemovalInput(confirm_name=device.name), user, db)
+    result = delete_device(device.id, DeviceRemovalInput(), user, db)
     assert result["history_purged"] is False
+    assert result["bindings_removed"] == 1
     assert db.get(Device, device.id).status == "removed"
+    assert db.scalar(select(MeasurementBinding).where(MeasurementBinding.device_id == device.id)) is None
     assert db.scalar(select(TelemetrySample).where(TelemetrySample.device_id == device.id)) is not None
     db.close()
 
 
 def test_removal_can_purge_history():
     db, device, user = lifecycle_session()
-    result = delete_device(device.id, DeviceRemovalInput(confirm_name=device.name, purge_history=True), user, db)
+    result = delete_device(device.id, DeviceRemovalInput(purge_history=True), user, db)
     assert result["samples_removed"] == 1
     assert db.scalar(select(TelemetrySample).where(TelemetrySample.device_id == device.id)) is None
     db.close()
