@@ -2,23 +2,22 @@ import sqlite3
 
 import pytest
 
-from energy_manager.commissioning import validate_connection_config
+from energy_manager.commissioning import validate_connection_config, validate_device_connection_config
 from energy_manager.config import Settings
 from energy_manager.maintenance import backup_file, create_backup, list_backups
 
 
 def test_tcp_connection_is_normalized():
     config = validate_connection_config("modbus_tcp", {"host": "192.168.2.108", "port": "5020", "timeout": "5", "retry": "0"})
-    assert config == {"host": "192.168.2.108", "port": 5020, "timeout": 5.0, "retry": 0}
+    assert config == {"port": 5020, "timeout": 5.0, "retry": 0}
 
 
 @pytest.mark.parametrize(
     "config",
     [
-        {"host": "http://meter", "port": 502},
-        {"host": "meter", "port": 0},
-        {"host": "meter", "port": 502, "timeout": 60},
-        {"host": "meter", "port": 502, "retry": 20},
+        {"port": 0},
+        {"port": 502, "timeout": 60},
+        {"port": 502, "retry": 20},
     ],
 )
 def test_invalid_tcp_connection_is_rejected(config):
@@ -29,6 +28,22 @@ def test_invalid_tcp_connection_is_rejected(config):
 def test_rtu_connection_is_normalized():
     config = validate_connection_config("modbus_rtu", {"port": "/dev/ttyUSB0", "baud_rate": 19200, "parity": "e", "stop_bits": 1, "byte_size": 8})
     assert config["parity"] == "E" and config["baud_rate"] == 19200
+
+
+def test_rtu_over_tcp_gateway_is_normalized():
+    config = validate_connection_config("modbus_rtu_tcp", {"host": "gateway.local", "port": "5020"})
+    assert config["host"] == "gateway.local" and config["port"] == 5020
+
+
+def test_direct_tcp_endpoint_belongs_to_device():
+    config = validate_device_connection_config("modbus_tcp", {"host": "192.168.2.108", "port": "502"})
+    assert config == {"host": "192.168.2.108", "port": 502}
+
+
+@pytest.mark.parametrize("config", [{}, {"host": "http://meter"}, {"host": "meter", "port": 0}])
+def test_invalid_device_tcp_endpoint_is_rejected(config):
+    with pytest.raises(ValueError):
+        validate_device_connection_config("modbus_tcp", config)
 
 
 def test_sqlite_backup_is_consistent_and_pruned(tmp_path):

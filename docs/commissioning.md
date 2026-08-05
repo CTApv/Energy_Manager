@@ -34,7 +34,7 @@ Il gateway Caddy espone solo HTTPS e usa una CA locale. Distribuire la root CA a
 2. creare un secondo amministratore nominativo e gli account operatore/viewer;
 3. impostare la denominazione reale del sito;
 4. aggiungere le connessioni TCP o RTU con timeout conservativo e retry zero nella prima diagnosi;
-5. usare **Struttura impianto → Aggiungi dispositivo**, verificando modello, variante, protocollo e Unit ID;
+5. usare **Struttura impianto → Aggiungi dispositivo**, verificando modello e variante; inserire IP/porta sul dispositivo per TCP diretto oppure lo Unit ID per RTU e RTU-over-TCP;
 6. scegliere durante la stessa procedura il nodo energetico esistente oppure crearne uno nel corretto ramo monte/valle;
 7. verificare l'esito del primo polling e confrontare tensioni, correnti, potenza ed energia con il display dello strumento;
 8. verificare byte/word order, rapporti TA/TV e unità sul manuale della specifica variante firmware;
@@ -48,7 +48,7 @@ Registrare almeno:
 
 - inventario IPC, adattatori, gateway e strumenti con seriale/firmware;
 - schema rete e RS485, terminazioni e polarizzazione;
-- tabella IP, porte, Unit ID e profili catalogo/versioni;
+- tabella endpoint TCP per dispositivo, bus/gateway condivisi, Unit ID RTU e profili catalogo/versioni;
 - confronto di almeno cinque misure live per ogni modello;
 - perdita comunicazione e riconnessione senza riavvio dell'Edge;
 - continuità con Control Room e Internet scollegati;

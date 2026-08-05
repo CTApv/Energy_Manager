@@ -53,7 +53,7 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.7.0")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.8.0")
 
 
 class Role(Base, TimestampMixin):
@@ -162,6 +162,7 @@ class Device(Base, TimestampMixin):
     profile_id: Mapped[str] = mapped_column(ForeignKey("device_profiles.id"), index=True)
     name: Mapped[str] = mapped_column(String(160))
     unit_id: Mapped[int] = mapped_column(Integer, default=1)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(30), default="unknown")
     last_valid_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

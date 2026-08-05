@@ -18,9 +18,6 @@ _HOSTNAME = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]+(?:\.(?!-)[A-Za-z0-9-]+
 
 def validate_connection_config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     if kind == "modbus_tcp":
-        host = str(config.get("host", "")).strip()
-        if not host or not _HOSTNAME.fullmatch(host):
-            raise ValueError("Host TCP non valido")
         port = int(config.get("port", 502))
         if not 1 <= port <= 65535:
             raise ValueError("La porta TCP deve essere compresa tra 1 e 65535")
@@ -30,6 +27,18 @@ def validate_connection_config(kind: str, config: dict[str, Any]) -> dict[str, A
             raise ValueError("Il timeout deve essere compreso tra 0,2 e 30 secondi")
         if not 0 <= retry <= 5:
             raise ValueError("I tentativi extra devono essere compresi tra 0 e 5")
+        return {"port": port, "timeout": timeout, "retry": retry}
+    if kind == "modbus_rtu_tcp":
+        host = str(config.get("host", "")).strip()
+        if not host or not _HOSTNAME.fullmatch(host):
+            raise ValueError("Host del gateway RTU-over-TCP non valido")
+        port = int(config.get("port", 502))
+        timeout = float(config.get("timeout", 2))
+        retry = int(config.get("retry", 0))
+        if not 1 <= port <= 65535:
+            raise ValueError("La porta TCP deve essere compresa tra 1 e 65535")
+        if not 0.2 <= timeout <= 30 or not 0 <= retry <= 5:
+            raise ValueError("Timeout o tentativi extra non validi")
         return {"host": host, "port": port, "timeout": timeout, "retry": retry}
     if kind == "modbus_rtu":
         port = str(config.get("port", "")).strip()
@@ -49,6 +58,24 @@ def validate_connection_config(kind: str, config: dict[str, Any]) -> dict[str, A
             raise ValueError("Timeout o tentativi extra non validi")
         return {"port": port, "baud_rate": baud_rate, "parity": parity, "stop_bits": stop_bits, "byte_size": byte_size, "timeout": timeout, "retry": retry}
     raise ValueError("Protocollo di connessione non supportato")
+
+
+def validate_device_connection_config(kind: str, config: dict[str, Any], default_port: int = 502) -> dict[str, Any]:
+    if kind != "modbus_tcp":
+        return {}
+    host = str(config.get("host", "")).strip()
+    if not host or not _HOSTNAME.fullmatch(host):
+        raise ValueError("Indirizzo IP o hostname del dispositivo non valido")
+    port = int(config.get("port", default_port))
+    if not 1 <= port <= 65535:
+        raise ValueError("La porta del dispositivo deve essere compresa tra 1 e 65535")
+    normalized = {"host": host, "port": port}
+    if "protocol_unit_id" in config:
+        protocol_unit_id = int(config["protocol_unit_id"])
+        if not 0 <= protocol_unit_id <= 247:
+            raise ValueError("Unit ID Modbus interno non valido")
+        normalized["protocol_unit_id"] = protocol_unit_id
+    return normalized
 
 
 def _check(identifier: str, title: str, status: str, detail: str, action: str, blocking: bool = False) -> dict:

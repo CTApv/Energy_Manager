@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import "./device-provisioning-transport.css";
 
 const apiBase = import.meta.env.VITE_API_URL || "/api";
 
@@ -83,6 +84,8 @@ export function DeviceProvisioningWizard({
   const [connectionId, setConnectionId] = useState("");
   const [name, setName] = useState("");
   const [unitId, setUnitId] = useState(1);
+  const [host, setHost] = useState("");
+  const [tcpPort, setTcpPort] = useState(502);
   const [placementMode, setPlacementMode] = useState<"existing" | "new">(
     assets.length ? "existing" : "new",
   );
@@ -99,9 +102,10 @@ export function DeviceProvisioningWizard({
   const profile = installableProfiles.find((item) => item.id === profileId);
   const definition = profile?.definition || {};
   const connection = connections.find((item) => item.id === connectionId);
-  const compatibleConnections = connections.filter((item) =>
-    definition.protocols?.includes(item.kind),
-  );
+  const compatibleConnections = connections.filter((item) => {
+    const protocol = item.kind === "modbus_rtu_tcp" ? "modbus_rtu" : item.kind;
+    return definition.protocols?.includes(protocol);
+  });
   const filteredProfiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("it");
     if (!needle) return installableProfiles;
@@ -130,7 +134,12 @@ export function DeviceProvisioningWizard({
     setError("");
     if (step === 0 && !profileId)
       return setError("Seleziona il modello dalla targhetta.");
-    if (step === 1 && (!connectionId || !name.trim()))
+    if (
+      step === 1 &&
+      (!connectionId ||
+        !name.trim() ||
+        (connection?.kind === "modbus_tcp" && !host.trim()))
+    )
       return setError("Indica connessione e nome del dispositivo.");
     if (
       step === 2 &&
@@ -152,7 +161,11 @@ export function DeviceProvisioningWizard({
             connection_id: connectionId,
             profile_id: profileId,
             name: name.trim(),
-            unit_id: Number(unitId),
+            unit_id: connection?.kind === "modbus_tcp" ? null : Number(unitId),
+            config:
+              connection?.kind === "modbus_tcp"
+                ? { host: host.trim(), port: Number(tcpPort) }
+                : {},
           },
           placement:
             placementMode === "existing"
@@ -297,15 +310,21 @@ export function DeviceProvisioningWizard({
                     <button
                       key={item.id}
                       className={connectionId === item.id ? "selected" : ""}
-                      onClick={() => setConnectionId(item.id)}
+                      onClick={() => {
+                        setConnectionId(item.id);
+                        if (item.kind === "modbus_tcp")
+                          setTcpPort(Number(item.config?.port || 502));
+                      }}
                     >
                       <Cable />
                       <span>
                         <b>{item.name}</b>
                         <small>
                           {item.kind === "modbus_tcp"
-                            ? `${item.config.host}:${item.config.port}`
-                            : `${item.config.port} · ${item.config.baud_rate} baud`}
+                            ? `IP dedicato per dispositivo · porta ${item.config?.port || 502}`
+                            : item.kind === "modbus_rtu_tcp"
+                              ? `Gateway ${item.config?.host}:${item.config?.port}`
+                              : `${item.config?.port} · ${item.config?.baud_rate} baud`}
                         </small>
                       </span>
                       <i />
@@ -322,16 +341,53 @@ export function DeviceProvisioningWizard({
                     placeholder="Contatore generale"
                   />
                 </label>
-                <label>
-                  Slave / Unit ID
-                  <input
-                    type="number"
-                    min="0"
-                    max="247"
-                    value={unitId}
-                    onChange={(event) => setUnitId(Number(event.target.value))}
-                  />
-                </label>
+                {connection?.kind === "modbus_tcp" ? (
+                  <>
+                    <label>
+                      IP o hostname del dispositivo
+                      <input
+                        value={host}
+                        onChange={(event) => setHost(event.target.value)}
+                        placeholder="192.168.2.108"
+                      />
+                    </label>
+                    <label>
+                      Porta TCP
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={tcpPort}
+                        onChange={(event) =>
+                          setTcpPort(Number(event.target.value))
+                        }
+                      />
+                    </label>
+                    <div className="tcp-address-note">
+                      <ShieldCheck />
+                      <span>
+                        <b>TCP diretto: nessuno Unit ID da configurare</b>
+                        <small>
+                          L'indirizzo identifica questo dispositivo. Il driver
+                          gestisce internamente il valore di protocollo.
+                        </small>
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <label>
+                    Slave / Unit ID
+                    <input
+                      type="number"
+                      min="1"
+                      max="247"
+                      value={unitId}
+                      onChange={(event) =>
+                        setUnitId(Number(event.target.value))
+                      }
+                    />
+                  </label>
+                )}
               </div>
             </>
           )}
@@ -445,7 +501,11 @@ export function DeviceProvisioningWizard({
                   <span>
                     <small>Comunicazione</small>
                     <b>{connection?.name}</b>
-                    <em>Unit ID {unitId}</em>
+                    <em>
+                      {connection?.kind === "modbus_tcp"
+                        ? `${host}:${tcpPort}`
+                        : `Unit ID ${unitId}`}
+                    </em>
                   </span>
                 </article>
                 <ChevronRight />

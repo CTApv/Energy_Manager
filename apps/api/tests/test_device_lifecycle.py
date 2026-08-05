@@ -76,7 +76,7 @@ def test_guided_provisioning_creates_device_asset_and_primary_binding_atomically
                 connection_id=connection.id,
                 profile_id=profile.id,
                 name="Contatore generale",
-                unit_id=1,
+                config={"host": "192.168.2.108", "port": 5020},
             ),
             placement=ProvisioningPlacementInput(name="Punto di consegna", category="grid"),
             measurement_key="electrical.active_power.total",

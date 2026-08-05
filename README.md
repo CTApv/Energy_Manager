@@ -4,7 +4,7 @@ Energy Manager è una piattaforma open source per la gestione di ecosistemi ener
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.7.0` introduce il catalogo scalabile file-per-driver e un commissioning guidato che installa dispositivo, posizione nell’albero e misura primaria in un’unica operazione verificabile.
+La release `0.8.0` aggiunge un contesto energetico live sempre disponibile, separa correttamente TCP diretto, RTU seriale e RTU-over-TCP e rende il commissioning coerente con la topologia fisica dell’impianto.
 
 ## Sviluppo e manutenzione
 
@@ -17,9 +17,10 @@ I riferimenti completi e l'ambito dei crediti sono riportati in [CREDITS.md](CRE
 ## Cosa offre
 
 - dashboard live dell’intero impianto o del singolo dispositivo;
+- pannello destro richiudibile con albero live, totali energetici, stato e priorità operative in ogni vista Edge;
 - albero energetico modificabile con drag and drop e principio “contatore a monte autorevole”;
 - catalogo Siemens PAC2200/PAC3200/PAC3220, Schneider Acti9 iEM3000, Huawei SUN2000/SUN5000 LB0 con LUNA2000 e ABB Terra AC, con protocolli e varianti dichiarati dal costruttore;
-- discovery guidata della rete Modbus TCP con rilevamento gateway, Unit ID e suggerimento del profilo;
+- discovery guidata della rete Modbus con scelta esplicita tra dispositivo TCP diretto e gateway RTU-over-TCP;
 - profili estendibili per multimetri, inverter fotovoltaici, accumuli, colonnine e dispositivi di altri produttori;
 - monitoraggio per giorno, settimana, mese e anno con confronto omogeneo col periodo precedente;
 - costi di prelievo, ricavi da immissione, costo netto, emissioni e proiezioni di budget;
@@ -84,7 +85,7 @@ password: EnergyDemo!2026
 Al primo accesso:
 
 1. aprire **Configura impianto** e definire sito, connessione, dispositivi e gerarchia;
-2. usare **Trova dispositivi** per cercare automaticamente gli slave Modbus TCP oppure configurarli manualmente;
+2. usare **Trova dispositivi** per cercare automaticamente gli endpoint Modbus oppure configurarli manualmente, indicando se sono dispositivi TCP diretti o slave dietro un gateway RTU-over-TCP;
 3. associare `electrical.energy.import_total` al contatore generale e alle utenze secondarie;
 4. aprire **Consumi e costi → Parametri** e impostare tariffa, fattore CO₂, potenza e budget;
 5. verificare dati e qualità nei **Dispositivi live**;
@@ -129,7 +130,7 @@ La procedura completa è in [docs/commissioning.md](docs/commissioning.md). La s
 
 ## Modbus e catalogo dispositivi
 
-Il polling è read-only e supporta Modbus TCP e RTU con sessione condivisa per connessione, serializzazione delle richieste, timeout e retry controllati. In questo modo decine di dispositivi sullo stesso gateway non aprono una connessione TCP indipendente ciascuno.
+Il polling è read-only e tratta i trasporti secondo la topologia reale: ogni dispositivo Modbus TCP diretto possiede il proprio IP e la propria sessione; RTU seriale e RTU-over-TCP condividono invece un bus/gateway, serializzano le richieste e identificano i dispositivi tramite Unit ID. Timeout e retry restano controllati.
 
 Il pulsante **Comunicazioni → Ricerca Modbus** apre un browser di rete simile ai commissioning tool industriali: scansiona una rete privata fino a `/24`, cerca le porte configurate, interroga fino a 32 Unit ID e usa la funzione Modbus Device Identification quando disponibile. Il modello suggerito deve sempre essere confermato dalla targhetta. La discovery non scrive registri e non installa nulla senza conferma. Dettagli e limiti di sicurezza sono in [docs/modbus-discovery.md](docs/modbus-discovery.md).
 

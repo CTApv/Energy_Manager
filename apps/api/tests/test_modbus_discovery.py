@@ -27,7 +27,7 @@ def test_device_identity_and_profile_ranking():
     assert identity["vendor"] == "Siemens AG"
     assert candidates[0]["profile_id"] == "pac3220"
     assert candidates[0]["confidence"] == .96
-    assert all(item["profile_id"] != "rtu" for item in candidates)
+    assert next(item for item in candidates if item["profile_id"] == "rtu")["protocols"] == ["modbus_rtu"]
 
 
 def test_configured_hostname_is_resolved_for_duplicate_detection(monkeypatch):

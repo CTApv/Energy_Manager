@@ -55,6 +55,7 @@ import { CommunicationsCenter } from "./communications-center";
 import { SystemCenter } from "./system-center";
 import { DeviceRemoval } from "./device-removal";
 import { DeviceProvisioningWizard } from "./device-provisioning-wizard";
+import { EnergyContextRail } from "./energy-context-rail";
 import { applyTheme, initializeTheme } from "./theme";
 
 initializeTheme();
@@ -841,6 +842,7 @@ function Plant({
     connection_id: "",
     profile_id: "",
     unit_id: 1,
+    config: { host: "", port: 502 },
   };
   const [siteName, setSiteName] = useState(""),
     [connection, setConnection] = useState<any>(connectionBlank),
@@ -963,7 +965,20 @@ function Plant({
         token,
         {
           method: editingDeviceId ? "PUT" : "POST",
-          body: JSON.stringify({ ...device, unit_id: Number(device.unit_id) }),
+          body: JSON.stringify({
+            ...device,
+            unit_id:
+              selectedConnection?.kind === "modbus_tcp"
+                ? null
+                : Number(device.unit_id),
+            config:
+              selectedConnection?.kind === "modbus_tcp"
+                ? {
+                    host: device.config?.host?.trim(),
+                    port: Number(device.config?.port || 502),
+                  }
+                : {},
+          }),
         },
       );
       setDevice(deviceBlank);
@@ -984,6 +999,10 @@ function Plant({
       connection_id: d.connection_id,
       profile_id: d.profile_id,
       unit_id: d.unit_id,
+      config: {
+        host: d.config?.host || "",
+        port: d.config?.port || 502,
+      },
     });
     if (p) {
       setDeviceCategory(p.definition?.category || "multimeter");
@@ -1063,13 +1082,21 @@ function Plant({
       p.definition?.category === deviceCategory &&
       p.definition?.manufacturer === deviceManufacturer &&
       (!selectedConnection ||
-        p.definition?.protocols?.includes(selectedConnection.kind)),
+        p.definition?.protocols?.includes(
+          selectedConnection.kind === "modbus_rtu_tcp"
+            ? "modbus_rtu"
+            : selectedConnection.kind,
+        )),
   );
   const selectedProfile = data.profiles.find(
     (p: any) => p.id === device.profile_id,
   );
   const protocolLabel = (kind: string) =>
-    kind === "modbus_tcp" ? "Modbus TCP" : "Modbus RTU / RS485";
+    kind === "modbus_tcp"
+      ? "Modbus TCP diretto"
+      : kind === "modbus_rtu_tcp"
+        ? "Modbus RTU-over-TCP"
+        : "Modbus RTU / RS485";
   const availabilityLabel = (value: string) =>
     value === "built_in"
       ? "Integrato"
@@ -1461,6 +1488,9 @@ function Plant({
                     const p = data.profiles.find(
                       (x: any) => x.id === d.profile_id,
                     );
+                    const deviceConnection = data.connections.find(
+                      (c: any) => c.id === d.connection_id,
+                    );
                     return (
                       <div key={d.id}>
                         <span className="asset-icon">
@@ -1472,12 +1502,10 @@ function Plant({
                             {p
                               ? `${categoryLabel(p.definition?.category)} · ${p.definition?.manufacturer} ${p.definition?.model} · `
                               : ""}
-                            Slave {d.unit_id} ·{" "}
-                            {
-                              data.connections.find(
-                                (c: any) => c.id === d.connection_id,
-                              )?.name
-                            }
+                            {deviceConnection?.kind === "modbus_tcp"
+                              ? `${d.config?.host || "Endpoint non impostato"}:${d.config?.port || 502}`
+                              : `Unit ID ${d.unit_id}`}{" "}
+                            · {deviceConnection?.name}
                           </small>
                           {d.last_error && (
                             <small className="error-text">{d.last_error}</small>
@@ -1624,9 +1652,13 @@ function Plant({
                     ) : (
                       <div className="model-picker">
                         {compatibleProfiles.map((p: any) => {
+                          const communicationKind =
+                            selectedConnection.kind === "modbus_rtu_tcp"
+                              ? "modbus_rtu"
+                              : selectedConnection.kind;
                           const communication =
                             p.definition?.capabilities?.communication?.[
-                              selectedConnection.kind
+                              communicationKind
                             ];
                           return (
                             <button
@@ -1670,7 +1702,11 @@ function Plant({
                       <small>
                         {
                           selectedProfile.definition?.capabilities
-                            ?.communication?.[selectedConnection?.kind]?.note
+                            ?.communication?.[
+                            selectedConnection?.kind === "modbus_rtu_tcp"
+                              ? "modbus_rtu"
+                              : selectedConnection?.kind
+                          ]?.note
                         }
                       </small>
                       <span>
@@ -1681,18 +1717,58 @@ function Plant({
                       </span>
                     </div>
                   )}
-                  <label>
-                    Slave / Unit ID
-                    <input
-                      type="number"
-                      min="0"
-                      max="247"
-                      value={device.unit_id}
-                      onChange={(e) =>
-                        setDevice({ ...device, unit_id: e.target.value })
-                      }
-                    />
-                  </label>
+                  {selectedConnection?.kind === "modbus_tcp" ? (
+                    <>
+                      <label>
+                        IP o hostname dispositivo
+                        <input
+                          value={device.config?.host || ""}
+                          placeholder="192.168.2.108"
+                          onChange={(e) =>
+                            setDevice({
+                              ...device,
+                              config: {
+                                ...device.config,
+                                host: e.target.value,
+                              },
+                            })
+                          }
+                          required
+                        />
+                      </label>
+                      <label>
+                        Porta TCP
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={device.config?.port || 502}
+                          onChange={(e) =>
+                            setDevice({
+                              ...device,
+                              config: {
+                                ...device.config,
+                                port: e.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <label>
+                      Slave / Unit ID
+                      <input
+                        type="number"
+                        min="1"
+                        max="247"
+                        value={device.unit_id}
+                        onChange={(e) =>
+                          setDevice({ ...device, unit_id: e.target.value })
+                        }
+                      />
+                    </label>
+                  )}
                   <button
                     className="primary-button wide"
                     disabled={!device.profile_id}
@@ -1991,6 +2067,9 @@ function App() {
           />
         )}
       </main>
+      {mode === "edge" && (
+        <EnergyContextRail token={token} onOpenLive={() => setPage("live")} />
+      )}
     </div>
   );
 }
