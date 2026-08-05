@@ -1,60 +1,103 @@
-# Energy Manager — Edge + Control Room MVP
+# Energy Manager
 
-MVP funzionante per acquisizione Modbus industriale, storico locale, KPI energetici e sincronizzazione opzionale verso una Control Room. Il progetto non contiene né dipende da codice PV Guardian.
+Energy Manager è una piattaforma open source per il monitoraggio energetico industriale, composta da un **Edge autonomo installato in impianto** e da una **Control Room opzionale** che concentra più Edge senza sostituirne le funzioni locali.
 
-## Gestione dell'impianto sull'Edge
+[![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-L'impianto si configura dall'interfaccia Edge, voce **Impianto** nel menu laterale. La pagina raccoglie in un percorso unico:
+La release `0.3.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e trasforma i contatori in informazioni operative: consumi, potenza, costi, CO₂, budget, confronto temporale, bilancio fotovoltaico e ripartizione per utenza.
 
-1. identità del sito;
-2. connessioni Modbus TCP o RTU;
-3. dispositivi installati e relativo profilo di catalogo;
-4. albero energetico;
-5. associazione delle misure normalizzate ai nodi.
+## Cosa offre
 
-Per installare uno strumento si usa il percorso **Impianto → Dispositivi**: categoria, produttore, connessione/protocollo e infine modello. La connessione scelta filtra i soli modelli compatibili e indica se l'interfaccia è integrata, una variante del prodotto o richiede un modulo opzionale.
+- dashboard live dell’intero impianto o del singolo dispositivo;
+- albero energetico modificabile con drag and drop e principio “contatore a monte autorevole”;
+- catalogo Siemens PAC2200, PAC3200 e PAC3220, con varianti Modbus TCP/RTU compatibili;
+- profili estendibili per multimetri, inverter fotovoltaici, accumuli, colonnine e dispositivi di altri produttori;
+- monitoraggio per giorno, settimana, mese e anno con confronto omogeneo col periodo precedente;
+- costi di prelievo, ricavi da immissione, costo netto, emissioni e proiezioni di budget;
+- produzione FV, energia autoconsumata, autoconsumo e autosufficienza;
+- ripartizione dei consumi per utenza, quota non attribuita e consumi fuori orario;
+- storico interrogabile, grafici per grandezza ed export CSV compatibile con Excel;
+- soglie con isteresi, severità, presa visione, chiusura e audit;
+- utenti e ruoli, backup verificabili, retention e checklist di commissioning;
+- funzionamento Edge anche senza Internet, con outbox e sincronizzazione successiva;
+- immagini Docker multi-arch `linux/amd64` e `linux/arm64`.
 
-La Control Room non è il luogo in cui configurare l'impianto locale: resta separata e verrà evoluta come concentratore e supervisore degli Edge.
+## Architettura
 
-## Console operativa Edge
+```text
+Strumenti Modbus TCP/RTU
+          │
+          ▼
+┌──────────────────────────────────────────┐
+│ Edge cliente                             │
+│ polling → normalizzazione → SQLite       │
+│ live → storico → report → allarmi        │
+│ UI locale + backup + commissioning       │
+└───────────────────┬──────────────────────┘
+                    │ outbox firmata, retry/idempotenza
+                    ▼
+┌──────────────────────────────────────────┐
+│ Control Room opzionale                   │
+│ concentratore Edge e supervisione flotta │
+│ PostgreSQL                               │
+└──────────────────────────────────────────┘
+```
 
-La Dashboard Edge è una console live con aggiornamento automatico ogni 5 secondi. Permette di selezionare lo strumento, visualizzare KPI e andamento della potenza, controllare qualità e tempi di acquisizione, consultare tutte le misure normalizzate e gestire gli allarmi. Le pagine **Dati live** e **Allarmi** riutilizzano la stessa esperienza specializzata.
+La configurazione fisica e logica dell’impianto si esegue sempre sull’Edge. La Control Room riceve gli eventi degli Edge e offre una vista aggregata multi-cliente/multi-sito.
 
-Le soglie supportano condizioni sopra/sotto limite, priorità, isteresi anti-chattering, attivazione/disattivazione, notifica nel centro Edge, presa visione dell'operatore, rientro automatico e audit delle modifiche. Le regole lavorano sulle chiavi normalizzate e restano quindi indipendenti dal produttore del multimetro. Canali esterni come SMTP, SMS o webhook non vengono presentati come attivi finché non sono configurati con credenziali reali.
+## Avvio demo in 3 minuti
 
-La vista live segue l'albero energetico configurato in **Impianto → Albero e misure**. Si può selezionare l'intero impianto oppure ogni singolo multimetro. La politica di calcolo è `upstream_meter_authoritative_else_sum_children`: se un nodo dispone di un generale a monte, la sua misura è il totale autorevole e i sotto-contatori ne rappresentano la ripartizione; se manca il misuratore del nodo, il valore viene ricostruito sommando i figli. Sono mostrati potenza/energia attribuite, residuo non monitorato e copertura di misura. Il bilancio energetico usa delta omogenei sulle ultime 24 ore, evitando di sommare letture assolute con basi temporali diverse.
-
-La sezione **Governance → Conformità 4.0 / 5.0** esegue un readiness assessment esplicito, non una certificazione. La matrice copre Transizione 4.0/5.0, ISO 50001/50006, metrologia MID, IEC 62443/NIS2, Cyber Resilience Act, EU Data Act, continuità e ISA-18.2. Ogni controllo mostra evidenza disponibile e prossima azione; l'export produce un fascicolo JSON con impronta SHA-256. Il contenuto va riesaminato alla data dell'investimento con professionisti abilitati e fonti MIMIT/GSE vigenti.
-
-## Avvio rapido
-
-Prerequisito: Docker con Compose.
+Prerequisiti: Docker Engine o Docker Desktop con Compose.
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Aprire:
+Servizi disponibili:
 
-- Edge: http://localhost:3000
-- Control Room: http://localhost:3001
-- OpenAPI Edge: http://localhost:8000/docs
-- OpenAPI Control Room: http://localhost:8001/docs
-- controlli simulatore: `GET/POST http://localhost:18090`
+| Servizio | Indirizzo |
+|---|---|
+| Edge | http://localhost:3000 |
+| API Edge / OpenAPI | http://localhost:8000/docs |
+| Control Room | http://localhost:3001 |
+| API Control Room / OpenAPI | http://localhost:8001/docs |
+| Simulatore Modbus | `192.168.2.108:5020` dall’impianto o `localhost:5020` dall’host |
+| Controllo simulatore | http://localhost:18090 |
 
-Credenziali demo per entrambe le interfacce:
+Credenziali esclusivamente demo:
 
 ```text
 utente: admin
 password: EnergyDemo!2026
 ```
 
-Cambiare password, `EM_SECRET_KEY`, `EM_EDGE_TOKEN`, `EM_WEBHOOK_SECRET` e password PostgreSQL prima di qualunque deployment non locale. Nessun segreto reale è incluso.
+Al primo accesso:
 
-## Installazione su impianto cliente
+1. aprire **Configura impianto** e definire sito, connessione, dispositivi e gerarchia;
+2. associare `electrical.energy.import_total` al contatore generale e alle utenze secondarie;
+3. aprire **Consumi e report → Parametri** e impostare tariffa, fattore CO₂, potenza e budget;
+4. verificare dati e qualità nella **Console dispositivi**;
+5. completare **Commissioning** prima della consegna.
 
-Il deployment cliente è separato dalla demo: non avvia simulatore o Control Room, non crea dispositivi fittizi, richiede tutti i segreti e pubblica soltanto il gateway HTTPS.
+## Monitoraggio energetico
+
+Il motore usa chiavi normalizzate, non indirizzi Modbus o nomi proprietari. Per questo un Siemens PAC e uno strumento competitor vengono presentati nello stesso modo; cambiano solo produttore e modello.
+
+| Informazione | Chiave normalizzata principale |
+|---|---|
+| Potenza attiva totale | `electrical.active_power.total` |
+| Energia importata | `electrical.energy.import_total` |
+| Energia esportata | `electrical.energy.export_total` |
+| Produzione fotovoltaica | `pv.energy.total` |
+
+I consumi derivano dalla differenza tra letture cumulative. Un reset del contatore non genera un valore negativo: l’incremento successivo viene conservato e marcato `estimated`. I campioni invalidi non contribuiscono al report. Il confronto usa lo stesso tempo trascorso nel periodo precedente, evitando di confrontare metà mese con un mese completo.
+
+Per dettagli su formule, segni e assunzioni: [docs/energy-monitoring.md](docs/energy-monitoring.md).
+
+## Installazione Edge presso un cliente
+
+Il profilo cliente non avvia simulatori o Control Room, non inserisce dispositivi demo, richiede segreti non predefiniti e pubblica soltanto il gateway HTTPS.
 
 ```powershell
 .\scripts\new-customer-env.ps1 -Hostname energy-manager.cliente.local
@@ -62,75 +105,78 @@ New-Item -ItemType Directory -Force data | Out-Null
 docker compose -f docker-compose.edge.yml up -d --build
 ```
 
-Usare **Sistema → Commissioning** per completare il Site Acceptance Test, creare un backup verificato e rimuovere tutti i blocchi prima della consegna. La procedura completa, incluso RTU e ripristino, è in [docs/commissioning.md](docs/commissioning.md).
+Prima dell’avviamento definitivo:
 
-## Verifica del flusso verticale
+- usare account nominativi e cambiare ogni credenziale iniziale;
+- verificare rapporto TA/TV, verso energia, unità, endianness e revisione firmware;
+- evitare polling paralleli sullo stesso slave o gateway;
+- sincronizzare l’orologio Edge tramite NTP;
+- provare ogni soglia con il referente di impianto;
+- creare un backup e verificarne l’integrità;
+- esportare e firmare il verbale di Site Acceptance Test.
 
-Il seed crea `CTA Demo`, `Stabilimento Demo`, `EM-DEMO-001`, quattro dispositivi e due alberi distinti. Il polling parte automaticamente ogni 5 secondi:
+La procedura completa è in [docs/commissioning.md](docs/commissioning.md). La sezione **Conformità 4.0 / 5.0** è un readiness assessment con evidenze esportabili, non una certificazione fiscale, metrologica o normativa.
 
-```text
-Simulatore Modbus TCP → Edge → profilo catalogo → polling
-→ misure normalizzate → SQLite/storico → KPI monte/valle
-→ SyncOutbox → Control Room/PostgreSQL
-```
+## Modbus e catalogo dispositivi
 
-La Control Room può essere fermata senza interrompere l'Edge:
+Il polling è read-only e supporta Modbus TCP e RTU con sessione condivisa per connessione, serializzazione delle richieste, timeout e retry controllati. In questo modo decine di dispositivi sullo stesso gateway non aprono una connessione TCP indipendente ciascuno.
 
-```powershell
-docker compose stop control-room-api control-db
-# attendere: l'Edge continua e SyncOutbox cresce
-docker compose start control-db control-room-api
-# il retry con backoff recupera i batch mancanti
-```
+I profili supportano boolean/bit field, interi 16/32/64 bit, float 32/64, ASCII, byte/word order, scala, offset, enum e misure derivate. La validazione blocca funzioni di scrittura, sovrapposizioni e definizioni incoerenti.
 
-Controllare gli scenari del simulatore:
+- catalogo PAC: `packages/modbus-catalog/profiles/siemens-pac-family.yaml`;
+- profilo demo: `packages/modbus-catalog/profiles/generic-meter-v1.yaml`;
+- schema: `packages/modbus-catalog/schema/profile.schema.json`.
 
-```powershell
-Invoke-RestMethod http://localhost:18090
-Invoke-RestMethod -Method Post -ContentType application/json `
-  -Body '{"anomaly":true,"unattributed_percent":25}' `
-  http://localhost:18090
-Invoke-RestMethod -Method Post -ContentType application/json `
-  -Body '{"anomaly":false,"unattributed_percent":18,"reset_unit":1}' `
-  http://localhost:18090
-```
+La mappa registri deve sempre essere confrontata con il manuale esatto del modello, versione firmware e variante di comunicazione installata.
 
-Il profilo demo è in `packages/modbus-catalog/profiles/generic-meter-v1.yaml`. Il catalogo Siemens PAC2200/PAC3200/PAC3220 è in `packages/modbus-catalog/profiles/siemens-pac-family.yaml`: contiene registri di misura, qualità, stato, domanda ed energia supportati dal polling read-only FC03/FC04. La validazione rifiuta funzioni di scrittura, sovrapposizioni, tipi/dimensioni incoerenti e profili invalidi prima dell'attivazione.
+## Sicurezza e continuità
 
-I registri dei produttori vengono convertiti in chiavi e unità comuni, per esempio `electrical.active_power.total` in kW ed `electrical.energy.import_total` in kWh. Dashboard, KPI, allarmi e binding consumano queste chiavi: aggiungere un competitor cambia produttore/modello mostrato, non la struttura della dashboard.
+- password Argon2 e token JWT con ruoli;
+- audit delle operazioni sensibili;
+- CORS ristretto, security header e rate limit sugli endpoint sensibili;
+- firma HMAC e idempotenza dei batch Edge → Control Room;
+- segreti obbligatori in produzione e verifica anti-placeholder all’avvio;
+- HTTPS nel deployment cliente;
+- database locale, retention configurabile e backup SQLite consistente con SHA-256;
+- readiness e health check distinti.
 
-## Sviluppo locale e test
+Non inserire segreti reali nel repository. Generare `.env.customer` con lo script fornito e conservarlo con permessi limitati.
+
+## Sviluppo e test
+
+Backend:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".\apps\api[test]"
 .\.venv\Scripts\python -m pytest -q apps\api\tests
+```
 
+Frontend:
+
+```powershell
 Set-Location apps\web
-npm install
+npm ci
 npm run build
 ```
 
-Le immagini usano Python 3.13, Node 22 in build e componenti runtime multi-arch disponibili per AMD64/ARM64. SQLite è usato sull'Edge e PostgreSQL 17 nella Control Room. Alembic applica la baseline `0001_initial` a ogni avvio.
+Stack principale: Python 3.13, FastAPI, SQLAlchemy 2, Alembic, React 18, TypeScript, Vite, SQLite sull’Edge e PostgreSQL 17 nella Control Room.
 
-## Funzioni implementate
+## Struttura del repository
 
-- modelli dati Edge e Control Room con UUID e UTC;
-- autenticazione Argon2/JWT, ruoli, audit, CORS ristretto, rate limit e firma HMAC webhook;
-- catalogo JSON/YAML con schema, versioni, duplicazione, export e preview decoder;
-- decoder boolean/bit field, interi 16/32/64, float 32/64, ASCII, byte/word order, scala, offset ed enum;
-- connessioni TCP/RTU configurabili; polling MVP reale TCP read-only, blocchi contigui, timeout, stato/errori e pausa dispositivo;
-- storico con qualità/provenienza e cache live interrogabile;
-- albero energetico separato, binding multipli, spostamento via API ed eliminazione protetta;
-- delta contatori con reset/overflow, disponibilità comunicazione e KPI energia non attribuita;
-- regole/eventi allarme e chiusura dall'API;
-- outbox persistente, batch, retry/backoff e idempotenza Control Room;
-- attivazione monouso a scadenza e Tailscale fake, diagnostica dry-run e webhook;
-- UI responsive Edge e Control Room con tutte le sezioni MVP;
-- simulatore Modbus TCP per generale, Linea 1, Linea 2 e macchina industriale.
+```text
+apps/api/                 API, polling, report, persistenza e migrazioni
+apps/web/                 interfacce Edge e Control Room
+packages/modbus-catalog/  profili e schema dispositivi
+simulators/               slave Modbus TCP di laboratorio
+infrastructure/           reverse proxy e configurazione runtime
+scripts/                  provisioning e verifiche operative
+docs/                     architettura, commissioning e backlog
+.github/workflows/        CI e build multi-arch
+```
 
-## Limiti noti dell'MVP
+## Stato e limiti dichiarati
 
-Il polling implementa Modbus TCP e Modbus RTU con sessione e lock condivisi per connessione; TCP è verificato con il simulatore, mentre RTU deve essere qualificato sullo specifico adattatore RS485 e sui dispositivi del cliente prima della consegna. Il catalogo resta intenzionalmente read-only: configurazione, scrittura e reset dei registri non sono abilitati. Il simulatore espone controlli per anomalia, reset e quota non attribuita; disconnessione selettiva e timeout artificiale non alterano ancora il server. L'editor catalogo avanzato con undo/redo, gli aggiornamenti OTA firmati e il provider Tailscale reale restano sviluppi successivi; nessuna integrazione reale viene attivata senza credenziali e autorizzazione.
+La piattaforma è pronta per il commissioning applicativo, ma ogni installazione richiede qualifica sul campo. Modbus RTU deve essere provato con l’adattatore RS485 e lo strumento reali. Tariffe multi-fascia, notifiche esterne, OTA firmato, SSO e provider Tailscale reale restano evoluzioni pianificate e non vengono presentate come attive.
 
-Per dettagli: [architettura](docs/architecture.md) e [backlog](docs/backlog.md).
+Documenti utili: [architettura](docs/architecture.md) · [monitoraggio energetico](docs/energy-monitoring.md) · [commissioning](docs/commissioning.md) · [backlog](docs/backlog.md).

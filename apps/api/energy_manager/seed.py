@@ -9,7 +9,7 @@ from .catalog import expand_catalog_document, validate_profile
 from .config import Settings
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, CatalogProfile, CatalogProfileVersion, Connection,
-    Device, DeviceProfile, Edge, KpiDefinition, LocalSite, MeasurementBinding, MeasurementDefinition,
+    Device, DeviceProfile, Edge, EnergySettings, KpiDefinition, LocalSite, MeasurementBinding, MeasurementDefinition,
     RegisterDefinition, Role, Site, Tenant, User,
 )
 
@@ -75,6 +75,15 @@ def seed_database(db: Session, settings: Settings) -> None:
         db.add(site); db.flush()
         db.add(Edge(id="00000000-0000-4000-8000-000000000001", site_id=site.id, name="EM-DEMO-001", hostname="em-demo-001", status="offline", token_hash=hash_password(settings.edge_token)))
     definitions = seed_catalog(db, settings.mode == "edge")
+    if settings.mode == "edge" and not db.scalar(select(EnergySettings).limit(1)):
+        db.add(EnergySettings(
+            import_price_per_kwh=0.24 if settings.seed_demo else 0.0,
+            export_price_per_kwh=0.08 if settings.seed_demo else 0.0,
+            co2_kg_per_kwh=0.28 if settings.seed_demo else 0.0,
+            contracted_power_kw=80.0 if settings.seed_demo else None,
+            monthly_energy_budget_kwh=15000.0 if settings.seed_demo else None,
+            monthly_cost_budget=4000.0 if settings.seed_demo else None,
+        ))
     if settings.mode == "edge" and not db.scalar(select(MeasurementDefinition).limit(1)):
         for key, label, unit in SEMANTIC_KEYS:
             db.add(MeasurementDefinition(key=key, label=label, unit=unit))

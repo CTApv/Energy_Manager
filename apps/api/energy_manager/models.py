@@ -53,7 +53,7 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.2.0")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.3.0")
 
 
 class Role(Base, TimestampMixin):
@@ -76,6 +76,22 @@ class LocalSite(Base, TimestampMixin):
     __tablename__ = "local_sites"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(160))
+
+
+class EnergySettings(Base, TimestampMixin):
+    __tablename__ = "energy_settings"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR")
+    import_price_per_kwh: Mapped[float] = mapped_column(Float, default=0.0)
+    export_price_per_kwh: Mapped[float] = mapped_column(Float, default=0.0)
+    co2_kg_per_kwh: Mapped[float] = mapped_column(Float, default=0.0)
+    contracted_power_kw: Mapped[float | None] = mapped_column(Float)
+    monthly_energy_budget_kwh: Mapped[float | None] = mapped_column(Float)
+    monthly_cost_budget: Mapped[float | None] = mapped_column(Float)
+    timezone: Mapped[str] = mapped_column(String(64), default="Europe/Rome")
+    workday_start: Mapped[str] = mapped_column(String(5), default="08:00")
+    workday_end: Mapped[str] = mapped_column(String(5), default="18:00")
+    working_days: Mapped[list] = mapped_column(JSON, default=lambda: [0, 1, 2, 3, 4])
 
 
 class Connection(Base, TimestampMixin):

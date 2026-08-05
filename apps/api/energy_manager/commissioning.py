@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .maintenance import database_integrity, list_backups, storage_capacity
-from .models import AlarmRule, AssetNode, Connection, Device, LocalSite, MeasurementBinding, TelemetrySample, User
+from .models import AlarmRule, AssetNode, Connection, Device, EnergySettings, LocalSite, MeasurementBinding, TelemetrySample, User
 
 
 _HOSTNAME = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]+(?:\.(?!-)[A-Za-z0-9-]+)*$")
@@ -66,6 +66,7 @@ def commissioning_report(db: Session, settings: Settings) -> dict:
     assets = db.scalar(select(func.count()).select_from(AssetNode)) or 0
     users = db.scalar(select(func.count()).select_from(User).where(User.active.is_(True))) or 0
     rules = db.scalar(select(func.count()).select_from(AlarmRule).where(AlarmRule.active.is_(True))) or 0
+    energy = db.scalar(select(EnergySettings).limit(1))
     recent_samples = db.scalar(select(func.count()).select_from(TelemetrySample).where(TelemetrySample.sample_at >= datetime.now(timezone.utc) - timedelta(minutes=2))) or 0
     checks = []
     demo_name = not site or "demo" in site.name.lower()
@@ -84,6 +85,8 @@ def commissioning_report(db: Session, settings: Settings) -> dict:
     checks.append(_check("demo_seed", "Profilo cliente", "fail" if settings.seed_demo and settings.environment == "production" else "pass", "Dati demo attivi" if settings.seed_demo else "Seed demo disabilitato", "Impostare EM_SEED_DEMO=false sul deployment cliente.", True))
     checks.append(_check("users", "Account operativi", "pass" if users >= 2 else "warn", f"{users} utenti attivi", "Creare account nominativi e riservare admin al tecnico.", False))
     checks.append(_check("alarms", "Presidio allarmi", "pass" if rules else "warn", f"{rules} soglie attive", "Definire soglie concordate con il cliente.", False))
+    energy_configured = bool(energy and energy.import_price_per_kwh > 0 and energy.co2_kg_per_kwh > 0 and energy.contracted_power_kw)
+    checks.append(_check("energy_settings", "Parametri energetici", "pass" if energy_configured else "warn", "Tariffa, fattore CO₂ e potenza contrattuale configurati" if energy_configured else "Parametri economici o ambientali incompleti", "Inserire i parametri contrattuali e il fattore emissivo concordati con il cliente.", False))
     backups = list_backups(settings)
     checks.append(_check("backup", "Backup verificato", "pass" if backups else "fail", f"{len(backups)} backup disponibili", "Creare un backup e verificarne il ripristino prima della consegna.", True))
     integrity = database_integrity(settings)

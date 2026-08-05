@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import hashlib
 import hmac
+import io
 import json
 import secrets
 from collections import defaultdict, deque
@@ -14,7 +16,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -26,11 +28,12 @@ from .commissioning import commissioning_report, validate_connection_config
 from .config import get_settings
 from .db import Base, SessionLocal, engine, get_db
 from .decoder import decode_registers
+from .energy_reporting import build_energy_report, safe_zone
 from .kpi import counter_delta, unattributed_energy
 from .maintenance import backup_file, create_backup, database_integrity, list_backups, maintenance_loop, run_retention, storage_capacity
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
-    Connection, Device, DeviceProfile, Edge, EdgeActivation, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
+    Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergySettings, IngestedBatch, KpiDefinition, LocalSite, MeasurementBinding,
     RegisterDefinition, Site, SyncOutbox, TelemetrySample, Tenant, User, utcnow,
 )
 from .polling import close_clients, poll_device, polling_loop
@@ -166,6 +169,20 @@ class KpiDefinitionInput(BaseModel):
     name: str = Field(min_length=3, max_length=160)
     kind: str = Field(pattern="^(latest|sum|ratio)$")
     config: dict[str, Any]
+
+
+class EnergySettingsInput(BaseModel):
+    currency: str = Field(default="EUR", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    import_price_per_kwh: float = Field(default=0, ge=0)
+    export_price_per_kwh: float = Field(default=0, ge=0)
+    co2_kg_per_kwh: float = Field(default=0, ge=0)
+    contracted_power_kw: float | None = Field(default=None, gt=0)
+    monthly_energy_budget_kwh: float | None = Field(default=None, gt=0)
+    monthly_cost_budget: float | None = Field(default=None, gt=0)
+    timezone: str = Field(default="Europe/Rome", min_length=1, max_length=64)
+    workday_start: str = Field(default="08:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    workday_end: str = Field(default="18:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    working_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4], min_length=1, max_length=7)
 
 
 @app.get("/api/health")
@@ -537,6 +554,77 @@ def update_local_site(data: LocalSiteInput, user: User = Depends(require_roles("
         site.name = data.name
     db.add(AuditEvent(actor=user.username, action="plant.site.update", target_type="local_site", target_id=site.id, details={"name": data.name}))
     db.commit(); return as_dict(site)
+
+
+def energy_configuration(db: Session) -> EnergySettings:
+    configuration = db.scalar(select(EnergySettings).limit(1))
+    if not configuration:
+        configuration = EnergySettings()
+        db.add(configuration); db.commit(); db.refresh(configuration)
+    return configuration
+
+
+@app.get("/api/energy/settings")
+def get_energy_settings(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    return as_dict(energy_configuration(db))
+
+
+@app.put("/api/energy/settings")
+def update_energy_settings(data: EnergySettingsInput, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    if settings.mode != "edge": raise HTTPException(404)
+    try:
+        safe_zone(data.timezone)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if data.workday_start >= data.workday_end:
+        raise HTTPException(422, "L'orario di fine attività deve essere successivo a quello di inizio")
+    if any(day < 0 or day > 6 for day in data.working_days) or len(set(data.working_days)) != len(data.working_days):
+        raise HTTPException(422, "I giorni lavorativi devono essere univoci e compresi tra 0 e 6")
+    configuration = energy_configuration(db)
+    for key, value in data.model_dump().items():
+        setattr(configuration, key, value)
+    db.add(AuditEvent(actor=user.username, action="energy.settings.update", target_type="energy_settings", target_id=configuration.id, details={"currency": data.currency, "timezone": data.timezone, "working_days": data.working_days}))
+    db.commit(); db.refresh(configuration)
+    return as_dict(configuration)
+
+
+def energy_report_for(period: str, db: Session) -> dict[str, Any]:
+    if settings.mode != "edge": raise HTTPException(404)
+    if period not in {"day", "week", "month", "year"}:
+        raise HTTPException(422, "Il periodo deve essere day, week, month oppure year")
+    return build_energy_report(db, energy_configuration(db), period)
+
+
+@app.get("/api/energy/report")
+def energy_report(period: str = "month", user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return energy_report_for(period, db)
+
+
+@app.get("/api/energy/report.csv")
+def export_energy_report(period: str = "month", user: User = Depends(current_user), db: Session = Depends(get_db)) -> StreamingResponse:
+    report = energy_report_for(period, db)
+    stream = io.StringIO()
+    writer = csv.writer(stream, delimiter=";")
+    writer.writerow(["sezione", "voce", "valore", "unità"])
+    for key, unit in (("import_kwh", "kWh"), ("export_kwh", "kWh"), ("production_kwh", "kWh"), ("self_consumed_kwh", "kWh"), ("off_hours_kwh", "kWh"), ("unattributed_kwh", "kWh")):
+        writer.writerow(["energia", key, report["energy"].get(key), unit])
+    for key, unit in (("average_kw", "kW"), ("peak_kw", "kW"), ("contracted_kw", "kW"), ("coverage_percent", "%")):
+        writer.writerow(["potenza", key, report["power"].get(key), unit])
+    for key in ("energy_cost", "export_revenue", "net_cost", "projected_month_cost", "monthly_cost_budget"):
+        writer.writerow(["economia", key, report["economics"].get(key), report["economics"]["currency"]])
+    writer.writerow(["ambiente", "co2_kg", report["environment"]["co2_kg"], "kgCO2e"])
+    writer.writerow([])
+    writer.writerow(["ripartizione", "asset", "dispositivo", "energia_kwh", "qualità"])
+    for item in report["breakdown"]:
+        writer.writerow(["utenza", item["asset_name"], item["device_name"], item["energy_kwh"], item["quality"]])
+    writer.writerow([])
+    writer.writerow(["serie", "timestamp", "energia_kwh"])
+    for item in report["timeline"]:
+        writer.writerow(["consumo", item["time"], item["energy_kwh"]])
+    payload = ("\ufeff" + stream.getvalue()).encode("utf-8")
+    headers = {"Content-Disposition": f'attachment; filename="energy-report-{period}-{utcnow().date().isoformat()}.csv"'}
+    return StreamingResponse(iter([payload]), media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @app.post("/api/catalog/import")
