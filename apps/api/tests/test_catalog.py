@@ -49,3 +49,33 @@ def test_multi_vector_energy_asset_profiles_are_valid():
     assert all(profile is not None for profile in profiles.values())
     assert "pv.power.ac_total" in {point.key for point in profiles["pv_inverter"].points}
     assert "storage.soc" in {point.key for point in profiles["battery_storage"].points}
+
+
+def test_italian_field_device_catalog_is_valid_and_traceable():
+    path = Path(__file__).parents[3] / "packages" / "modbus-catalog" / "profiles" / "field-devices-italy.yaml"
+    documents = expand_catalog_document(yaml.safe_load(path.read_text(encoding="utf-8")))
+    profiles = {document["id"]: validate_profile(document)[0] for document in documents}
+
+    assert set(profiles) == {
+        "schneider-iem3000-modbus",
+        "huawei-sun2000-lb0-luna",
+        "abb-terra-ac-wallbox",
+    }
+    assert all(profile is not None for profile in profiles.values())
+    assert all(profile.documentation.get("url", "").startswith("https://") for profile in profiles.values())
+    assert all(profile.documentation.get("verified") == "2026-08-05" for profile in profiles.values())
+    assert all(profile.capabilities.get("writable") is False for profile in profiles.values())
+
+    schneider = profiles["schneider-iem3000-modbus"]
+    assert "electrical.energy.import_total" in {point.key for point in schneider.points}
+    assert "electrical.energy.export_total" in {point.key for point in schneider.points}
+
+    huawei = profiles["huawei-sun2000-lb0-luna"]
+    assert set(huawei.capabilities["components"]) == {"photovoltaic", "battery_storage", "grid_meter"}
+    assert {"pv.power.ac_total", "storage.soc", "electrical.active_power.grid"}.issubset(
+        {point.key for point in huawei.points}
+    )
+
+    abb = profiles["abb-terra-ac-wallbox"]
+    assert abb.defaults["polling_interval_seconds"] >= 30
+    assert "ev.energy.session" in {point.key for point in abb.points}

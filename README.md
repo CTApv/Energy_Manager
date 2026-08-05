@@ -1,10 +1,10 @@
 # Energy Manager
 
-Energy Manager è una piattaforma open source per la gestione energetica di abitazioni evolute e piccoli impianti, composta da un **Edge autonomo installato sul posto** e da una **Control Room opzionale** che concentra più Edge senza sostituirne le funzioni locali.
+Energy Manager è una piattaforma open source per la gestione di ecosistemi energetici evoluti, composta da un **Edge autonomo installato sul posto** e da una **Control Room opzionale** che concentra più Edge senza sostituirne le funzioni locali.
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.6.0` introduce Home Energy OS: un'esperienza orientata a fotovoltaico, accumulo, ricarica EV e consumi domestici, navigazione realmente adattata ai privilegi e rimozione sicura dei dispositivi con conservazione opzionale dello storico.
+La release `0.6.1` consolida Energy OS: tema chiaro/scuro realmente applicato, contrasto accessibile dei controlli, linguaggio unificato su “ecosistema energetico” e cataloghi da documentazione ufficiale per i dispositivi più ricorrenti.
 
 ## Sviluppo e manutenzione
 
@@ -18,7 +18,7 @@ I riferimenti completi e l'ambito dei crediti sono riportati in [CREDITS.md](CRE
 
 - dashboard live dell’intero impianto o del singolo dispositivo;
 - albero energetico modificabile con drag and drop e principio “contatore a monte autorevole”;
-- catalogo Siemens PAC2200, PAC3200 e PAC3220, con varianti Modbus TCP/RTU compatibili;
+- catalogo Siemens PAC2200/PAC3200/PAC3220, Schneider Acti9 iEM3000, Huawei SUN2000/SUN5000 LB0 con LUNA2000 e ABB Terra AC, con protocolli e varianti dichiarati dal costruttore;
 - discovery guidata della rete Modbus TCP con rilevamento gateway, Unit ID e suggerimento del profilo;
 - profili estendibili per multimetri, inverter fotovoltaici, accumuli, colonnine e dispositivi di altri produttori;
 - monitoraggio per giorno, settimana, mese e anno con confronto omogeneo col periodo precedente;
@@ -164,10 +164,12 @@ I profili IPv4 delle schede rilevate possono essere preparati da **Comunicazioni
 I profili supportano boolean/bit field, interi 16/32/64 bit, float 32/64, ASCII, byte/word order, scala, offset, enum e misure derivate. La validazione blocca funzioni di scrittura, sovrapposizioni e definizioni incoerenti.
 
 - catalogo PAC: `packages/modbus-catalog/profiles/siemens-pac-family.yaml`;
+- catalogo dispositivi diffusi in Italia: `packages/modbus-catalog/profiles/field-devices-italy.yaml`;
+- profili generici per integrazioni da validare: `packages/modbus-catalog/profiles/generic-energy-assets.yaml`;
 - profilo demo: `packages/modbus-catalog/profiles/generic-meter-v1.yaml`;
 - schema: `packages/modbus-catalog/schema/profile.schema.json`.
 
-La mappa registri deve sempre essere confrontata con il manuale esatto del modello, versione firmware e variante di comunicazione installata.
+Ogni profilo reale include URL del manuale, data di verifica, firmware/modelli compatibili e avvertenze. La mappa registri deve comunque essere confrontata con targhetta, manuale esatto, firmware e variante di comunicazione installata. Fronius e SolarEdge vengono riconosciuti come famiglie SunSpec, ma non sono associati a indirizzi fissi finché il runtime non avrà discovery del modello e scale factor dinamici: usare registri “probabili” sarebbe pericoloso in commissioning.
 
 ## Sicurezza e continuità
 
