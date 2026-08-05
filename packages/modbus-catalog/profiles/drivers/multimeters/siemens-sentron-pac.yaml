@@ -208,6 +208,10 @@ profiles:
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 1
     defaults: {polling_interval_seconds: 5, unit_id: 1}
+    driver:
+      implementation: standard_modbus
+      compatibility_group: siemens-sentron-pac2200
+      register_map: pac2200
     capabilities:
       communication:
         modbus_tcp: {availability: model_variant, note: Richiede variante PAC2200 con interfaccia Ethernet}
@@ -231,6 +235,10 @@ profiles:
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 1
     defaults: {polling_interval_seconds: 5, unit_id: 1}
+    driver:
+      implementation: standard_modbus
+      compatibility_group: siemens-sentron-pac3200
+      register_map: pac3200
     capabilities:
       communication:
         modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}
@@ -254,6 +262,10 @@ profiles:
     protocols: [modbus_tcp, modbus_rtu]
     address_base: 1
     defaults: {polling_interval_seconds: 5, unit_id: 1}
+    driver:
+      implementation: standard_modbus
+      compatibility_group: siemens-sentron-pac3220
+      register_map: pac3220
     capabilities:
       communication:
         modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}

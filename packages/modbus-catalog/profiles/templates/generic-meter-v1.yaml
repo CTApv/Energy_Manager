@@ -10,6 +10,11 @@ address_base: 0
 defaults:
   polling_interval_seconds: 5
   unit_id: 1
+driver:
+  implementation: standard_modbus
+  compatibility_group: template-generic-meter
+  register_map: demo-only
+  template: true
 points:
   - key: electrical.active_power.total
     label: Potenza attiva totale

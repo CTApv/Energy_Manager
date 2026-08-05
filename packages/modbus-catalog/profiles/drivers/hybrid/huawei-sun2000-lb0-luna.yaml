@@ -1,0 +1,47 @@
+id: huawei-sun2000-lb0-luna
+manufacturer: Huawei
+family: SUN2000/SUN5000 LB0
+model: SUN2000 3–6K-LB0 + LUNA2000
+category: pv_inverter
+description: Profilo composito read-only per inverter residenziali LB0; include produzione FV, accumulo LUNA e misure del contatore collegato all'inverter.
+version: 1.0.0
+protocols: [modbus_tcp, modbus_rtu]
+address_base: 0
+defaults: {polling_interval_seconds: 5, unit_id: 0, tcp_port: 6607}
+driver:
+  implementation: standard_modbus
+  compatibility_group: huawei-sun2000-lb0-luna
+  register_map: sun2000lb-v300r024c00
+capabilities:
+  energy_role: hybrid
+  dashboard: photovoltaic
+  components: [photovoltaic, battery_storage, grid_meter]
+  writable: false
+  communication:
+    modbus_tcp: {availability: built_in, note: Porta predefinita 6607 sulla rete locale/VPN secondo il manuale LB0}
+    modbus_rtu: {availability: built_in, note: RS485 Modbus RTU; verificare indirizzo logico e firmware minimo}
+documentation:
+  title: SUN2000LB V300R024C00 Modbus Interface Definitions, Issue 04
+  url: https://support.huawei.com/enterprise/en/doc/EDOC1100480329
+  verified: '2026-08-05'
+  warning: Profilo limitato ai modelli LB0 indicati e firmware V300R024C00 o successivo; non applicare automaticamente a L1/M1/MAP0.
+points:
+  - {key: pv.voltage.string1, label: Tensione stringa FV 1, function_code: 3, address: 32016, register_count: 1, data_type: int16, scale: 0.1, unit: V, polling_group: fast, group: Lato DC}
+  - {key: pv.current.string1, label: Corrente stringa FV 1, function_code: 3, address: 32017, register_count: 1, data_type: int16, scale: 0.01, unit: A, polling_group: fast, group: Lato DC}
+  - {key: pv.voltage.string2, label: Tensione stringa FV 2, function_code: 3, address: 32018, register_count: 1, data_type: int16, scale: 0.1, unit: V, polling_group: fast, group: Lato DC}
+  - {key: pv.current.string2, label: Corrente stringa FV 2, function_code: 3, address: 32019, register_count: 1, data_type: int16, scale: 0.01, unit: A, polling_group: fast, group: Lato DC}
+  - {key: pv.power.dc_total, label: Potenza ingresso FV, function_code: 3, address: 32064, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.voltage.l1_n, label: Tensione rete fase A, function_code: 3, address: 32069, register_count: 1, data_type: uint16, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+  - {key: electrical.current.l1, label: Corrente rete fase A, function_code: 3, address: 32072, register_count: 2, data_type: int32, scale: 0.001, unit: A, polling_group: fast, group: Rete}
+  - {key: pv.power.ac_total, label: Potenza AC prodotta, function_code: 3, address: 32080, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Potenze}
+  - {key: electrical.power_factor.total, label: Fattore di potenza, function_code: 3, address: 32084, register_count: 1, data_type: int16, scale: 0.001, unit: '', polling_group: fast, group: Rete}
+  - {key: electrical.frequency, label: Frequenza rete, function_code: 3, address: 32085, register_count: 1, data_type: uint16, scale: 0.01, unit: Hz, polling_group: fast, group: Rete}
+  - {key: pv.inverter.efficiency, label: Rendimento inverter, function_code: 3, address: 32086, register_count: 1, data_type: uint16, scale: 0.01, unit: '%', polling_group: normal, group: Prestazioni}
+  - {key: pv.inverter.temperature, label: Temperatura interna, function_code: 3, address: 32087, register_count: 1, data_type: int16, scale: 0.1, unit: °C, polling_group: normal, group: Termica}
+  - {key: device.operating_state, label: Stato inverter, function_code: 3, address: 32089, register_count: 1, data_type: uint16, unit: '', polling_group: fast, group: Stato}
+  - {key: storage.power.active, label: Potenza accumulo, function_code: 3, address: 37001, register_count: 2, data_type: int32, scale: -0.001, unit: kW, polling_group: fast, group: Accumulo}
+  - {key: storage.voltage.dc, label: Tensione bus accumulo, function_code: 3, address: 37003, register_count: 1, data_type: uint16, scale: 0.1, unit: V, polling_group: fast, group: Accumulo}
+  - {key: storage.soc, label: Stato di carica accumulo, function_code: 3, address: 37004, register_count: 1, data_type: uint16, scale: 0.1, unit: '%', polling_group: fast, group: Accumulo}
+  - {key: electrical.active_power.grid, label: Potenza al punto di scambio, function_code: 3, address: 37113, register_count: 2, data_type: int32, scale: 0.001, unit: kW, polling_group: fast, group: Contatore}
+  - {key: electrical.energy.export_total, label: Energia immessa in rete, function_code: 3, address: 37119, register_count: 2, data_type: int32, scale: 0.01, unit: kWh, polling_group: normal, group: Contatore}
+  - {key: electrical.energy.import_total, label: Energia prelevata dalla rete, function_code: 3, address: 37121, register_count: 2, data_type: int32, scale: 0.01, unit: kWh, polling_group: normal, group: Contatore}

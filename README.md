@@ -4,7 +4,7 @@ Energy Manager è una piattaforma open source per la gestione di ecosistemi ener
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.6.1` consolida Energy OS: tema chiaro/scuro realmente applicato, contrasto accessibile dei controlli, linguaggio unificato su “ecosistema energetico” e cataloghi da documentazione ufficiale per i dispositivi più ricorrenti.
+La release `0.7.0` introduce il catalogo scalabile file-per-driver e un commissioning guidato che installa dispositivo, posizione nell’albero e misura primaria in un’unica operazione verificabile.
 
 ## Sviluppo e manutenzione
 
@@ -163,11 +163,14 @@ I profili IPv4 delle schede rilevate possono essere preparati da **Comunicazioni
 
 I profili supportano boolean/bit field, interi 16/32/64 bit, float 32/64, ASCII, byte/word order, scala, offset, enum e misure derivate. La validazione blocca funzioni di scrittura, sovrapposizioni e definizioni incoerenti.
 
-- catalogo PAC: `packages/modbus-catalog/profiles/siemens-pac-family.yaml`;
-- catalogo dispositivi diffusi in Italia: `packages/modbus-catalog/profiles/field-devices-italy.yaml`;
-- profili generici per integrazioni da validare: `packages/modbus-catalog/profiles/generic-energy-assets.yaml`;
-- profilo demo: `packages/modbus-catalog/profiles/generic-meter-v1.yaml`;
+- driver Siemens SENTRON PAC: `packages/modbus-catalog/profiles/drivers/multimeters/siemens-sentron-pac.yaml`;
+- driver Schneider Acti9: `packages/modbus-catalog/profiles/drivers/multimeters/schneider-acti9-iem3000.yaml`;
+- driver Huawei ibrido: `packages/modbus-catalog/profiles/drivers/hybrid/huawei-sun2000-lb0-luna.yaml`;
+- driver ABB Terra AC: `packages/modbus-catalog/profiles/drivers/ev-chargers/abb-terra-ac.yaml`;
+- profili generici non destinati al commissioning: `packages/modbus-catalog/profiles/templates/`;
 - schema: `packages/modbus-catalog/schema/profile.schema.json`.
+
+Il catalogo segue il principio **un file per driver o famiglia realmente compatibile**. Più modelli possono convivere nello stesso file soltanto quando condividono implementazione e blocchi di registri; `compatibility_group` e `register_map` rendono esplicito il confine. Il caricatore esplora ricorsivamente il catalogo, registra il file sorgente nel profilo e blocca gli ID duplicati all'avvio. La convenzione completa è descritta in [docs/device-drivers.md](docs/device-drivers.md).
 
 Ogni profilo reale include URL del manuale, data di verifica, firmware/modelli compatibili e avvertenze. La mappa registri deve comunque essere confrontata con targhetta, manuale esatto, firmware e variante di comunicazione installata. Fronius e SolarEdge vengono riconosciuti come famiglie SunSpec, ma non sono associati a indirizzi fissi finché il runtime non avrà discovery del modello e scale factor dinamici: usare registri “probabili” sarebbe pericoloso in commissioning.
 

@@ -1,0 +1,37 @@
+id: abb-terra-ac-wallbox
+manufacturer: ABB
+family: Terra AC
+model: Terra AC Wallbox FW 1.8+
+category: ev_charger
+description: Profilo read-only per Terra AC configurata come Modbus Secondary/Server. L'energia esposta dal registro è quella della sessione corrente.
+version: 1.0.0
+protocols: [modbus_tcp, modbus_rtu]
+address_base: 0
+defaults: {polling_interval_seconds: 30, unit_id: 1}
+driver:
+  implementation: standard_modbus
+  compatibility_group: abb-terra-ac-fw-1-8
+  register_map: terra-ac-modbus-v1.11
+capabilities:
+  energy_role: consumer
+  dashboard: ev_charging
+  writable: false
+  communication:
+    modbus_tcp: {availability: model_dependent, note: Non disponibile sulle varianti CE senza display; configurare con TerraConfig}
+    modbus_rtu: {availability: built_in, note: RS485 configurabile 4800–115200 baud}
+documentation:
+  title: ABB Terra AC Charger Modbus Communication v1.11
+  url: https://library.e.abb.com/public/982c2befa2734d259e66d76fa4a7ba77/ABB_Terra_AC_Charger_ModbusCommunication_v1.11.pdf
+  verified: '2026-08-05'
+  warning: ABB raccomanda polling 30–90 s; polling troppo lento rispetto al timeout configurato può arrestare la sessione.
+points:
+  - {key: device.operating_state, label: Stato di ricarica IEC 61851-1, function_code: 3, address: 16396, register_count: 2, data_type: uint32, unit: '', polling_group: fast, group: Stato}
+  - {key: ev.current.limit, label: Limite corrente applicato, function_code: 3, address: 16398, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+  - {key: electrical.current.l1, label: Corrente di ricarica L1, function_code: 3, address: 16400, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+  - {key: electrical.current.l2, label: Corrente di ricarica L2, function_code: 3, address: 16402, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+  - {key: electrical.current.l3, label: Corrente di ricarica L3, function_code: 3, address: 16404, register_count: 2, data_type: uint32, scale: 0.001, unit: A, polling_group: fast, group: Sessione}
+  - {key: electrical.voltage.l1_n, label: Tensione L1, function_code: 3, address: 16406, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+  - {key: electrical.voltage.l2_n, label: Tensione L2, function_code: 3, address: 16408, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+  - {key: electrical.voltage.l3_n, label: Tensione L3, function_code: 3, address: 16410, register_count: 2, data_type: uint32, scale: 0.1, unit: V, polling_group: fast, group: Rete}
+  - {key: ev.power.active, label: Potenza di ricarica, function_code: 3, address: 16412, register_count: 2, data_type: uint32, scale: 0.001, unit: kW, polling_group: fast, group: Sessione}
+  - {key: ev.energy.session, label: Energia erogata nella sessione, function_code: 3, address: 16414, register_count: 2, data_type: uint32, scale: 0.001, unit: kWh, polling_group: normal, group: Sessione}

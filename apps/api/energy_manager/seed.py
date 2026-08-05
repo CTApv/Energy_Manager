@@ -38,12 +38,22 @@ def _profiles_directory() -> Path:
 
 def seed_catalog(db: Session, edge_mode: bool) -> dict[str, dict]:
     definitions: dict[str, dict] = {}
+    sources: dict[str, str] = {}
     for path in sorted(_profiles_directory().rglob("*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         for document in expand_catalog_document(raw):
             profile, errors = validate_profile(document)
             if errors: raise ValueError(f"Invalid bundled catalog {path.name}: {'; '.join(errors)}")
-            definition = profile.model_dump(); definitions[profile.id] = definition
+            relative_path = str(path.relative_to(_profiles_directory())).replace("\\", "/")
+            if profile.id in sources:
+                raise ValueError(f"Duplicate driver {profile.id}: {sources[profile.id]} and {relative_path}")
+            sources[profile.id] = relative_path
+            definition = profile.model_dump()
+            definition["driver"] = {
+                **definition.get("driver", {}),
+                "source_file": relative_path,
+            }
+            definitions[profile.id] = definition
             catalog = db.get(CatalogProfile, profile.id)
             if not catalog:
                 db.add(CatalogProfile(id=profile.id, manufacturer=profile.manufacturer, model=profile.model, category=profile.category, latest_version=profile.version))
