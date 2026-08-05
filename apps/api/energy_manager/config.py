@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     mode: str = "edge"
     environment: str = "development"
-    release: str = "0.5.0"
+    release: str = "0.5.1"
     secret_key: str = "development-only-secret-key-change-me"
     edge_database_url: str = "sqlite:///./data/edge.db"
     control_database_url: str = "sqlite:///./data/control-room.db"

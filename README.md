@@ -4,7 +4,15 @@ Energy Manager è una piattaforma open source per il monitoraggio energetico ind
 
 [![CI](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/CTApv/Energy_Manager/actions/workflows/ci.yml)
 
-La release `0.5.0` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e aggiunge un provisioning Edge ordinato per impianto, comunicazioni e amministrazione.
+La release `0.5.1` acquisisce misure Modbus, le normalizza indipendentemente dal costruttore, conserva lo storico locale e aggiunge un provisioning Edge ordinato per impianto, comunicazioni e amministrazione.
+
+## Sviluppo e manutenzione
+
+**Filippo Lolli** — sviluppatore e maintainer del progetto.
+
+Contatto: [filippoctass@gmail.com](mailto:filippoctass@gmail.com)
+
+I riferimenti completi e l'ambito dei crediti sono riportati in [CREDITS.md](CREDITS.md). La presenza dei crediti non definisce da sola i termini di licenza o di utilizzo del software.
 
 ## Cosa offre
 

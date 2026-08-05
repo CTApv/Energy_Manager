@@ -86,7 +86,12 @@ async def lifespan(app: FastAPI):
     close_clients()
 
 
-app = FastAPI(title=f"Energy Manager {settings.mode}", version=settings.release, lifespan=lifespan)
+app = FastAPI(
+    title=f"Energy Manager {settings.mode}",
+    version=settings.release,
+    contact={"name": "Filippo Lolli", "email": "filippoctass@gmail.com"},
+    lifespan=lifespan,
+)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Webhook-Signature"])
 
 
