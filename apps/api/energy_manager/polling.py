@@ -111,6 +111,31 @@ async def _read(client: AsyncModbusTcpClient, function_code: int, address: int, 
     return await client.read_input_registers(**kwargs)
 
 
+async def _read_with_session_recovery(
+    client: Any,
+    connection: Connection,
+    device: Device,
+    function_code: int,
+    address: int,
+    count: int,
+    unit_id: int,
+) -> tuple[Any, Any]:
+    """Retry once on a fresh session when a slave corrupts the TCP transaction sequence."""
+    try:
+        return client, await _read(client, function_code, address, count, unit_id)
+    except Exception:
+        client_key = _client_key(connection, device)
+        try:
+            client.close()
+        finally:
+            _clients.pop(client_key, None)
+            _client_signatures.pop(client_key, None)
+        replacement = _pooled_client(connection, device)
+        if not replacement.connected and not await replacement.connect():
+            raise ConnectionError("Modbus reconnect failed")
+        return replacement, await _read(replacement, function_code, address, count, unit_id)
+
+
 def calculate_derived_points(values: dict[str, Any], definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Calculate only catalog-declared operations over already normalized values."""
     calculated: list[dict[str, Any]] = []
@@ -190,7 +215,15 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
                     if connection.kind == "modbus_tcp"
                     else device.unit_id
                 )
-                response = await _read(client, block["function_code"], block["start"] - base, block["end"] - block["start"], protocol_unit_id)
+                client, response = await _read_with_session_recovery(
+                    client,
+                    connection,
+                    device,
+                    block["function_code"],
+                    block["start"] - base,
+                    block["end"] - block["start"],
+                    protocol_unit_id,
+                )
                 if response.isError():
                     raise IOError(str(response))
                 values = response.bits if block["function_code"] in {1, 2} else response.registers
@@ -204,9 +237,11 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
                 item["quality"], item["quality_reason"] = sample_quality(item["key"], item["value"])
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
-            # Pymodbus closes the transport on transaction mismatch/timeouts.
-            # Discard only dead clients; healthy persistent sessions stay open.
-            if not client.connected:
+            # Never retain a session after a failed recovery: its transaction
+            # state is no longer trustworthy even if the socket is still open.
+            try:
+                client.close()
+            finally:
                 _clients.pop(client_key, None)
                 _client_signatures.pop(client_key, None)
     now = datetime.now(timezone.utc)
