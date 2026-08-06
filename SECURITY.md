@@ -16,5 +16,6 @@ La presa in carico è prevista entro 3 giorni lavorativi. La severità, il piano
 - Il deployment di produzione richiede segreti univoci, HTTPS e un `EM_EDGE_ID` distinto per ogni Edge.
 - La gestione di rete host resta disabilitata per impostazione predefinita.
 - Token, file `.env`, backup e database di clienti non devono essere allegati a issue o commit.
+- Il Digital Twin Lab deve restare disabilitato sugli Edge cliente; l'API rifiuta l'avvio in ambiente `production` e il compose cliente non include simulatori.
 
 La procedura tecnica e i rischi residui sono descritti in [docs/security-architecture.md](docs/security-architecture.md).

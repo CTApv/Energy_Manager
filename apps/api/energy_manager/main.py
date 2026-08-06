@@ -31,13 +31,14 @@ from .contracts import BaselineInput, EdgeInput, IngestBatchEnvelope, SiteInput,
 from .control_room import allowed_edge_ids, portfolio
 from .db import Base, SessionLocal, engine, get_db
 from .decoder import decode_registers
+from .digital_twin import FAULTS, SCENARIOS, FaultCommand, ScenarioCommand, StressCommand, apply_fault, apply_scenario, clear_faults, complete_run, lab_status, qualification_snapshot, reset_lab, run_stress
 from .energy_reporting import build_energy_report, safe_zone
 from .kpi import counter_delta, unattributed_energy
 from .maintenance import backup_file, create_backup, database_integrity, list_backups, maintenance_loop, run_retention, storage_capacity
 from .modbus_discovery import discover_modbus, parse_scan_network, resolved_ipv4
 from .models import (
     AlarmEvent, AlarmRule, AssetNode, AuditEvent, CatalogProfile, CatalogProfileVersion,
-    Connection, Device, DeviceProfile, Edge, EdgeActivation, EnergyBaseline, EnergySettings, EnergyTariff,
+    Connection, Device, DeviceProfile, DigitalTwinRun, Edge, EdgeActivation, EnergyBaseline, EnergySettings, EnergyTariff,
     IngestedBatch, IngestedEvent, KpiDefinition, LocalSite, MeasurementBinding, RegisterDefinition,
     RemoteDevice, Site, SyncOutbox, SystemPreference, TelemetryRollup, TelemetrySample, Tenant, User, utcnow,
 )
@@ -101,7 +102,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_crede
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    edge_only = ("/api/connections", "/api/discovery", "/api/devices", "/api/assets", "/api/bindings", "/api/operations", "/api/energy", "/api/commissioning", "/api/maintenance", "/api/sync")
+    edge_only = ("/api/connections", "/api/discovery", "/api/devices", "/api/assets", "/api/bindings", "/api/operations", "/api/energy", "/api/commissioning", "/api/maintenance", "/api/sync", "/api/digital-twin")
     control_only = ("/api/control", "/api/ingest", "/api/fleet", "/api/edges", "/api/activate")
     if settings.mode == "control-room" and request.url.path.startswith(edge_only):
         return JSONResponse(status_code=404, content={"detail": "Endpoint available only on an Edge"})
@@ -889,7 +890,7 @@ async def catalog_import(user: Annotated[User, Depends(require_roles("platform_a
     if all_errors: return JSONResponse(status_code=422, content={"valid": False, "errors": all_errors})
     imported = []
     for profile in validated:
-        definition = profile.model_dump()
+        definition = profile.model_dump(mode="json")
         existing = db.get(CatalogProfile, profile.id)
         version_row = db.scalar(select(CatalogProfileVersion).where(CatalogProfileVersion.profile_id == profile.id, CatalogProfileVersion.version == profile.version))
         if not existing:
@@ -1648,6 +1649,83 @@ def close_alarm(event_id: str, user: User = Depends(require_roles("platform_admi
     event = db.get(AlarmEvent, event_id)
     if not event: raise HTTPException(404, "Alarm not found")
     event.status = "closed"; event.closed_at = utcnow(); db.commit(); return as_dict(event)
+
+
+def require_digital_twin() -> None:
+    if not settings.digital_twin_enabled:
+        raise HTTPException(404, "Digital Twin Lab is disabled on this Edge")
+
+
+@app.get("/api/digital-twin/catalog")
+def digital_twin_catalog(user: User = Depends(require_roles("platform_admin", "technician"))) -> dict:
+    require_digital_twin()
+    return {"scenarios": SCENARIOS, "faults": FAULTS, "limits": {"max_units": 150, "max_connections": 32, "max_cycles": 10}}
+
+
+@app.get("/api/digital-twin/status")
+async def digital_twin_status(user: User = Depends(require_roles("platform_admin", "technician"))) -> dict:
+    require_digital_twin()
+    return await lab_status(settings)
+
+
+@app.post("/api/digital-twin/scenario")
+async def digital_twin_scenario(command: ScenarioCommand, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin()
+    result = await apply_scenario(settings, command)
+    passed = all(item.get("reachable") for item in result.values())
+    run = DigitalTwinRun(kind="scenario", scenario=command.scenario, status="passed" if passed else "failed", parameters=command.model_dump(mode="json"), result={"services": result, "passed": passed}, completed_at=utcnow())
+    db.add(run); db.flush(); db.add(AuditEvent(actor=user.username, action="digital_twin.scenario", target_type="digital_twin_run", target_id=run.id, details={"scenario": command.scenario, "time_scale": command.time_scale})); db.commit()
+    return {"run": as_dict(run), "status": await lab_status(settings)}
+
+
+@app.post("/api/digital-twin/fault")
+async def digital_twin_fault(command: FaultCommand, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin()
+    result = await apply_fault(settings, command)
+    passed = all(item.get("reachable") for item in result.values())
+    run = DigitalTwinRun(kind="fault", scenario="", status="passed" if passed else "failed", parameters=command.model_dump(mode="json"), result={"services": result, "passed": passed}, completed_at=utcnow())
+    db.add(run); db.flush(); db.add(AuditEvent(actor=user.username, action="digital_twin.fault", target_type="digital_twin_run", target_id=run.id, details={"fault": command.name, "enabled": command.enabled})); db.commit()
+    return {"run": as_dict(run), "status": await lab_status(settings)}
+
+
+@app.post("/api/digital-twin/faults/clear")
+async def digital_twin_clear_faults(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin(); result = await clear_faults(settings)
+    db.add(AuditEvent(actor=user.username, action="digital_twin.faults.clear", target_type="digital_twin", target_id=None, details={})); db.commit()
+    return {"services": result, "status": await lab_status(settings)}
+
+
+@app.post("/api/digital-twin/reset")
+async def digital_twin_reset(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin(); result = await reset_lab(settings)
+    db.add(AuditEvent(actor=user.username, action="digital_twin.reset", target_type="digital_twin", target_id=None, details={})); db.commit()
+    return {"services": result, "status": await lab_status(settings)}
+
+
+@app.post("/api/digital-twin/stress")
+async def digital_twin_stress(command: StressCommand, user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin()
+    run = DigitalTwinRun(kind="stress", scenario="", parameters=command.model_dump(mode="json"), result={}); db.add(run); db.commit()
+    try: result = await run_stress(settings, command)
+    except Exception as exc: result = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
+    response = complete_run(db, run, result)
+    db.add(AuditEvent(actor=user.username, action="digital_twin.stress", target_type="digital_twin_run", target_id=run.id, details={"units": command.units, "mode": command.mode, "passed": result.get("passed")})); db.commit()
+    return response
+
+
+@app.post("/api/digital-twin/qualification")
+async def digital_twin_qualification(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> dict:
+    require_digital_twin(); current = await lab_status(settings); result = qualification_snapshot(db, current)
+    run = DigitalTwinRun(kind="qualification", scenario=current.get("scenario") or "", parameters={}, result={}); db.add(run); db.commit()
+    response = complete_run(db, run, result)
+    db.add(AuditEvent(actor=user.username, action="digital_twin.qualification", target_type="digital_twin_run", target_id=run.id, details={"score": result["score"], "passed": result["passed"]})); db.commit()
+    return response
+
+
+@app.get("/api/digital-twin/runs")
+def digital_twin_runs(user: User = Depends(require_roles("platform_admin", "technician")), db: Session = Depends(get_db)) -> list[dict]:
+    require_digital_twin()
+    return [as_dict(item) for item in db.scalars(select(DigitalTwinRun).order_by(DigitalTwinRun.started_at.desc()).limit(100))]
 
 
 @app.get("/api/sync/status")

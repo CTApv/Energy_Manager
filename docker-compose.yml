@@ -2,33 +2,38 @@ name: energy-manager
 services:
   simulator:
     build: ./simulators/modbus-simulator
-    environment: {SIMULATOR_PROFILE: meter}
+    environment: {SIMULATOR_PROFILE: meter, SIMULATOR_UNIT_COUNT: 150, SIMULATOR_SCENARIO: residential_sunny, SIMULATOR_TIME_SCALE: 60}
     ports: ["5020:5020", "18090:18090"]
     restart: unless-stopped
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18090', timeout=2)"], interval: 5s, timeout: 3s, retries: 20}
 
   simulator-pv:
     build: ./simulators/modbus-simulator
     environment: {SIMULATOR_PROFILE: pv}
     ports: ["5021:5020", "18091:18090"]
     restart: unless-stopped
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18090', timeout=2)"], interval: 5s, timeout: 3s, retries: 20}
 
   simulator-storage:
     build: ./simulators/modbus-simulator
     environment: {SIMULATOR_PROFILE: storage}
     ports: ["5022:5020", "18092:18090"]
     restart: unless-stopped
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18090', timeout=2)"], interval: 5s, timeout: 3s, retries: 20}
 
   simulator-ev:
     build: ./simulators/modbus-simulator
     environment: {SIMULATOR_PROFILE: ev}
     ports: ["5023:5020", "18093:18090"]
     restart: unless-stopped
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18090', timeout=2)"], interval: 5s, timeout: 3s, retries: 20}
 
   simulator-weather:
     build: ./simulators/modbus-simulator
     environment: {SIMULATOR_PROFILE: weather}
     ports: ["5024:5020", "18094:18090"]
     restart: unless-stopped
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18090', timeout=2)"], interval: 5s, timeout: 3s, retries: 20}
 
   edge-api:
     build:
@@ -37,7 +42,7 @@ services:
     environment:
       EM_MODE: edge
       EM_ENVIRONMENT: development
-      EM_RELEASE: 0.9.0
+      EM_RELEASE: 0.9.1
       EM_EDGE_ID: ${EM_EDGE_ID:-00000000-0000-4000-8000-000000000001}
       EM_SECRET_KEY: ${EM_SECRET_KEY:-development-only-secret-key-change-me}
       EM_EDGE_DATABASE_URL: sqlite:////data/edge.db
@@ -48,8 +53,17 @@ services:
       EM_SEED_DEMO: "true"
       EM_BACKUP_DIRECTORY: /data/backups
       EM_CORS_ORIGINS: http://localhost:3000
+      EM_DIGITAL_TWIN_ENABLED: "true"
+      EM_DIGITAL_TWIN_CONTROL_URLS: meter=http://simulator:18090,pv=http://simulator-pv:18090,storage=http://simulator-storage:18090,ev=http://simulator-ev:18090,weather=http://simulator-weather:18090
+      EM_DIGITAL_TWIN_MODBUS_HOST: simulator
+      EM_DIGITAL_TWIN_MODBUS_PORT: 5020
     volumes: ["edge-data:/data"]
-    depends_on: [simulator, simulator-pv, simulator-storage, simulator-ev, simulator-weather]
+    depends_on:
+      simulator: {condition: service_healthy}
+      simulator-pv: {condition: service_healthy}
+      simulator-storage: {condition: service_healthy}
+      simulator-ev: {condition: service_healthy}
+      simulator-weather: {condition: service_healthy}
     ports: ["8000:8000"]
     restart: unless-stopped
 
@@ -79,7 +93,7 @@ services:
     environment:
       EM_MODE: control-room
       EM_ENVIRONMENT: development
-      EM_RELEASE: 0.9.0
+      EM_RELEASE: 0.9.1
       EM_SECRET_KEY: ${EM_SECRET_KEY:-development-only-secret-key-change-me}
       EM_CONTROL_DATABASE_URL: postgresql+psycopg://energy:${POSTGRES_PASSWORD:-energy}@control-db:5432/energy_manager
       EM_EDGE_TOKEN: ${EM_EDGE_TOKEN:-demo-edge-token-change-me}

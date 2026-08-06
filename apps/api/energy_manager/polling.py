@@ -181,6 +181,28 @@ def sample_quality(key: str, value: Any) -> tuple[str, str | None]:
     return "good", None
 
 
+def flag_implausibly_uniform_registers(samples: list[dict[str, Any]]) -> bool:
+    """Detect the common broken-simulator/map symptom where unrelated points are identical."""
+    candidates = [
+        round(float(item["value"]), 6)
+        for item in samples
+        if item.get("quality") == "good"
+        and isinstance(item.get("value"), (int, float))
+        and math.isfinite(float(item["value"]))
+        and not item["key"].startswith("device.")
+    ]
+    if len(candidates) < 8:
+        return False
+    most_common = max(candidates.count(value) for value in set(candidates))
+    if most_common < max(8, math.ceil(len(candidates) * 0.65)):
+        return False
+    for item in samples:
+        if item.get("quality") == "good":
+            item["quality"] = "bad"
+            item["quality_reason"] = "implausible_identical_registers"
+    return True
+
+
 async def poll_device(device_id: str, scheduled: bool = False) -> int:
     started = time.monotonic()
     with SessionLocal() as db:
@@ -235,6 +257,7 @@ async def poll_device(device_id: str, scheduled: bool = False) -> int:
             samples.extend(calculate_derived_points(values_by_key, profile.definition.get("derived_points", [])))
             for item in samples:
                 item["quality"], item["quality_reason"] = sample_quality(item["key"], item["value"])
+            flag_implausibly_uniform_registers(samples)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             # Never retain a session after a failed recovery: its transaction

@@ -9,6 +9,7 @@ protocols: [modbus_tcp, modbus_rtu]
 address_base: 0
 defaults: {polling_interval_seconds: 5, unit_id: 1}
 driver: {implementation: standard_modbus, compatibility_group: simulator-meter-v2, register_map: energy-manager-simulator-meter-v2, template: true}
+validation: {level: simulated, verified_at: '2026-08-06', verified_by: Energy Manager Digital Twin Lab, evidence: [simulator-register-coverage, ecosystem-energy-balance], notes: Profilo destinato esclusivamente a simulazione e pre-commissioning.}
 capabilities: {energy_role: meter, dashboard: power_quality, writable: false, phases: 3}
 points:
   - {key: electrical.active_power.total, label: Potenza attiva totale, function_code: 3, address: 100, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Potenze}

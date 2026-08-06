@@ -48,7 +48,7 @@ def seed_catalog(db: Session, edge_mode: bool) -> dict[str, dict]:
             if profile.id in sources:
                 raise ValueError(f"Duplicate driver {profile.id}: {sources[profile.id]} and {relative_path}")
             sources[profile.id] = relative_path
-            definition = profile.model_dump()
+            definition = profile.model_dump(mode="json")
             definition["driver"] = {
                 **definition.get("driver", {}),
                 "source_file": relative_path,

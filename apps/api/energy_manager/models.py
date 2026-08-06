@@ -53,7 +53,7 @@ class Edge(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="offline")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_hash: Mapped[str] = mapped_column(String(255), default="")
-    app_version: Mapped[str] = mapped_column(String(30), default="0.9.0")
+    app_version: Mapped[str] = mapped_column(String(30), default="0.9.1")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     configuration_version: Mapped[str] = mapped_column(String(80), default="")
     backlog_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -382,3 +382,15 @@ class EnergyBaseline(Base, TimestampMixin):
     unit: Mapped[str] = mapped_column(String(30), default="kWh")
     normalization: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class DigitalTwinRun(Base):
+    __tablename__ = "digital_twin_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    scenario: Mapped[str] = mapped_column(String(80), default="")
+    status: Mapped[str] = mapped_column(String(30), default="running", index=True)
+    parameters: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

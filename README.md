@@ -4,7 +4,7 @@
 
 Energy Manager è una piattaforma open source di monitoraggio energetico composta da un **Edge autonomo installato nel sito** e da una **Control Room opzionale** che concentra più Edge. È pensata per ecosistemi con fotovoltaico, accumulo, colonnine di ricarica, contatori, sensori meteo e utenze elettriche organizzate in una gerarchia monte/valle.
 
-La release `0.9.0` consolida le fondamenta P0–P5: identità Edge stabile, ingest firmato e idempotente, separazione Edge/Control Room, retention e rollup, gestione portfolio, tariffe con validità temporale e baseline energetiche.
+La release `0.9.1` aggiunge il **Digital Twin Lab** per pre-commissioning senza hardware: scenari energetici coerenti, simulazione multi-device, fault injection, stress test fino a 150 slave e checklist di qualificazione persistente. Conserva le fondamenta P0–P5 della linea 0.9.
 
 ## Maintainer e licenza
 
@@ -80,6 +80,25 @@ docker compose up --build
 
 Credenziali esclusivamente demo: `admin` / `EnergyDemo!2026`.
 
+## Digital Twin Lab
+
+Nel profilo demo, tecnici e amministratori trovano **Digital Twin Lab** nella navigazione Edge. Il laboratorio offre:
+
+- sei scenari accelerabili, dalla villa solare al blackout controllato;
+- un ecosistema coerente: `rete = consumi - fotovoltaico - accumulo`;
+- 150 Unit ID del simulatore multimetro, con utenze 1–4 organizzabili monte/valle;
+- fault controllati: offline, latenza, freeze, registri identici, NaN, reset contatori, perdita fase, squilibrio e picco;
+- stress test a connessione condivisa o pool limitato, con successo, throughput e latenza p95;
+- checklist e storico delle esecuzioni per rendere ripetibile il pre-commissioning.
+
+Smoke test completo dopo l'avvio:
+
+```powershell
+.\scripts\digital-twin-smoke.ps1
+```
+
+Il laboratorio è disabilitato per default e viene rifiutato esplicitamente con `EM_ENVIRONMENT=production`. Dettagli e limiti: [Digital Twin Lab](docs/digital-twin-lab.md).
+
 ## Primo commissioning Edge
 
 1. Aprire **Struttura impianto** e definire sito, dispositivi e gerarchia.
@@ -127,7 +146,7 @@ Driver inclusi:
 - ABB Terra AC;
 - template di laboratorio per multimetro, FV, storage, EV e meteo.
 
-I file sono in `packages/modbus-catalog/profiles/drivers/`; il contratto è in [profile.schema.json](packages/modbus-catalog/schema/profile.schema.json). Le mappe simulate non sostituiscono la verifica sul manuale esatto del produttore. Dettagli: [driver](docs/device-drivers.md) e [discovery](docs/modbus-discovery.md).
+I file sono in `packages/modbus-catalog/profiles/drivers/`; il contratto è in [profile.schema.json](packages/modbus-catalog/schema/profile.schema.json). Ogni profilo dichiara il livello reale di evidenza: non verificato, simulato, revisionato da manuale, testato su hardware o validato sul campo. Le mappe simulate non sostituiscono la verifica sul manuale esatto del produttore. Dettagli: [driver](docs/device-drivers.md) e [discovery](docs/modbus-discovery.md).
 
 ## Sincronizzazione e dati
 

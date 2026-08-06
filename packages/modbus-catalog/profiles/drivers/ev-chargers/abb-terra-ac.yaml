@@ -12,6 +12,7 @@ driver:
   implementation: standard_modbus
   compatibility_group: abb-terra-ac-fw-1-8
   register_map: terra-ac-modbus-v1.11
+validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [ABB Terra AC Modbus Communication v1.11], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
 capabilities:
   energy_role: consumer
   dashboard: ev_charging

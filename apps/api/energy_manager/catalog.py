@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
+from datetime import date
 from typing import Any, Literal
 
 import yaml
@@ -55,6 +56,22 @@ class PointDefinition(BaseModel):
         return self
 
 
+class DriverValidation(BaseModel):
+    """Traceable maturity of a driver, without implying product certification."""
+
+    level: Literal["unverified", "simulated", "manual_reviewed", "hardware_tested", "field_validated"] = "unverified"
+    verified_at: date | None = None
+    verified_by: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+    @model_validator(mode="after")
+    def evidence_matches_level(self) -> "DriverValidation":
+        if self.level in {"hardware_tested", "field_validated"} and (not self.verified_at or not self.evidence):
+            raise ValueError(f"{self.level} requires verified_at and evidence")
+        return self
+
+
 class ProfileDefinition(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,99}$")
     manufacturer: str = Field(min_length=1, max_length=100)
@@ -68,12 +85,15 @@ class ProfileDefinition(BaseModel):
     defaults: dict[str, Any] = Field(default_factory=dict)
     capabilities: dict[str, Any] = Field(default_factory=dict)
     driver: dict[str, Any] = Field(default_factory=dict)
+    validation: DriverValidation = Field(default_factory=DriverValidation)
     documentation: dict[str, Any] = Field(default_factory=dict)
     points: list[PointDefinition] = Field(min_length=1)
     derived_points: list["DerivedPointDefinition"] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def unique_and_non_overlapping(self) -> "ProfileDefinition":
+        if self.driver.get("template") and self.validation.level not in {"unverified", "simulated"}:
+            raise ValueError("simulator/template profiles cannot claim hardware or field validation")
         keys: set[str] = set()
         occupied: dict[tuple[int, int], str] = {}
         for point in self.points:

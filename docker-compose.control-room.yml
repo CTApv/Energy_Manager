@@ -26,7 +26,7 @@ services:
     environment:
       EM_MODE: control-room
       EM_ENVIRONMENT: production
-      EM_RELEASE: 0.9.0
+      EM_RELEASE: 0.9.1
       EM_SECRET_KEY: ${EM_SECRET_KEY:?EM_SECRET_KEY is required}
       EM_CONTROL_DATABASE_URL: ${EM_CONTROL_DATABASE_URL:?EM_CONTROL_DATABASE_URL is required}
       EM_CORS_ORIGINS: https://${EM_CONTROL_ROOM_HOSTNAME:?EM_CONTROL_ROOM_HOSTNAME is required}

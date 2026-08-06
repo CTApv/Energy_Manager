@@ -212,6 +212,7 @@ profiles:
       implementation: standard_modbus
       compatibility_group: siemens-sentron-pac2200
       register_map: pac2200
+    validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [Siemens L1V30415167B-06], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
     capabilities:
       communication:
         modbus_tcp: {availability: model_variant, note: Richiede variante PAC2200 con interfaccia Ethernet}
@@ -239,6 +240,7 @@ profiles:
       implementation: standard_modbus
       compatibility_group: siemens-sentron-pac3200
       register_map: pac3200
+    validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [Siemens A5E01168664B-04], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
     capabilities:
       communication:
         modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}
@@ -266,6 +268,7 @@ profiles:
       implementation: standard_modbus
       compatibility_group: siemens-sentron-pac3220
       register_map: pac3220
+    validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [Siemens L1V30425208F-01], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
     capabilities:
       communication:
         modbus_tcp: {availability: built_in, note: Interfaccia Ethernet integrata, porta predefinita 502}
