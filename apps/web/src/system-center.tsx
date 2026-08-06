@@ -48,25 +48,38 @@ export function SystemCenter({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const load = async () => {
+  const loadStatus = async (refresh = false) => {
     setError("");
     try {
-      const [s, e] = await Promise.all([
-        api("/system/overview", token),
+      const status = await api(`/system/status${refresh ? "?refresh=true" : ""}`, token);
+      setSystem((current: any) => ({ ...current, ...status }));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+  const loadPreferences = async () => {
+    setError("");
+    try {
+      const [preferences, energySettings] = await Promise.all([
+        api("/system/preferences", token),
         api("/energy/settings", token),
       ]);
-      setSystem(s);
-      setEnergy(e);
+      setSystem((current: any) => ({ ...current, preferences }));
+      setEnergy(energySettings);
     } catch (e: any) {
       setError(e.message);
     }
   };
   useEffect(() => {
     setTab(focus);
-  }, [focus]);
-  useEffect(() => {
-    void load();
-  }, [token]);
+    if (focus === "status") void loadStatus();
+    else void loadPreferences();
+  }, [token, focus]);
+  const selectTab = (value: "status" | "preferences") => {
+    setTab(value);
+    if (value === "status" && !system?.runtime) void loadStatus();
+    if (value === "preferences" && (!system?.preferences || !energy)) void loadPreferences();
+  };
   const selectTheme = (theme: ThemePreference) => {
     setSystem({ ...system, preferences: { ...system.preferences, theme } });
     applyTheme(theme);
@@ -93,14 +106,15 @@ export function SystemCenter({
       ]);
       setMessage("Preferenze salvate");
       setTimeout(() => setMessage(""), 3500);
-      await load();
+      await loadPreferences();
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBusy(false);
     }
   }
-  if (!system || !energy)
+  const ready = tab === "status" ? !!system?.runtime : !!system?.preferences && !!energy;
+  if (!ready)
     return <div className="loading">Caricamento configurazione…</div>;
   const storage = system.storage || {},
     percent = storage.total_bytes
@@ -117,7 +131,7 @@ export function SystemCenter({
             fuori contesto.
           </span>
         </div>
-        <button className="icon-button" onClick={load}>
+        <button className="icon-button" onClick={() => tab === "status" ? void loadStatus(true) : void loadPreferences()}>
           <RefreshCw />
           Aggiorna
         </button>
@@ -132,14 +146,14 @@ export function SystemCenter({
       <nav className="section-tabs">
         <button
           className={tab === "status" ? "active" : ""}
-          onClick={() => setTab("status")}
+          onClick={() => selectTab("status")}
         >
           <Activity />
           Stato Edge
         </button>
         <button
           className={tab === "preferences" ? "active" : ""}
-          onClick={() => setTab("preferences")}
+          onClick={() => selectTab("preferences")}
         >
           <Gauge />
           Preferenze operative
@@ -174,10 +188,10 @@ export function SystemCenter({
               </span>
               <div>
                 <small>Database</small>
-                <b>{system.database === "ok" ? "Integro" : "Da verificare"}</b>
+                <b>{system.database === "ok" ? "Disponibile" : "Da verificare"}</b>
               </div>
               <em className={system.database === "ok" ? "ok" : "bad"}>
-                {system.database}
+                {system.database === "ok" ? "CONNESSIONE OK" : system.database}
               </em>
             </article>
             <article>
@@ -241,7 +255,7 @@ export function SystemCenter({
                   </div>
                   <em>
                     Retention automatica dati:{" "}
-                    {energy.retention_days || "configurata dal sistema"}
+                    {system.telemetry_retention_days || "configurata dal sistema"}
                   </em>
                 </div>
               </div>
