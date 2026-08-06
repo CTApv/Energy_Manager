@@ -8,10 +8,12 @@ import io
 import json
 import secrets
 import ipaddress
+import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Any
 
 import yaml
@@ -285,21 +287,53 @@ def save_preference(db: Session, key: str, value: dict[str, Any]) -> SystemPrefe
     return item
 
 
+_system_status_cache: dict[str, Any] = {"expires_at": 0.0, "value": None}
+_system_status_lock = Lock()
+
+
+def system_status_value(db: Session, refresh: bool = False) -> dict[str, Any]:
+    """Return fast operational health; expensive full integrity checks belong to maintenance."""
+    now = time.monotonic()
+    cached = _system_status_cache["value"]
+    if not refresh and cached is not None and now < _system_status_cache["expires_at"]:
+        return cached
+    with _system_status_lock:
+        now = time.monotonic()
+        cached = _system_status_cache["value"]
+        if not refresh and cached is not None and now < _system_status_cache["expires_at"]:
+            return cached
+        interfaces = network_interfaces()
+        profiles = {item.key.removeprefix("network.interface."): item.value for item in db.scalars(select(SystemPreference).where(SystemPreference.key.like("network.interface.%")))}
+        for interface in interfaces:
+            interface["configured"] = profiles.get(interface["name"])
+        capacity = storage_capacity(settings)
+        capacity.update({"total_gb": round(capacity["total_bytes"] / 1024**3, 1), "used_gb": round(capacity["used_bytes"] / 1024**3, 1), "free_gb": round(capacity["free_bytes"] / 1024**3, 1)})
+        db.execute(select(1)).scalar_one()
+        value = {
+            "runtime": runtime_summary(), "release": settings.release, "environment": settings.environment,
+            "database": "ok", "database_check": "connectivity", "storage": capacity,
+            "interfaces": interfaces, "serial_ports": serial_ports(),
+            "network_management": {"apply_enabled": settings.network_management_enabled, "profiles_saved": len(profiles)},
+            "telemetry_retention_days": settings.telemetry_retention_days,
+            "refreshed_at": utcnow(),
+        }
+        _system_status_cache.update(value=value, expires_at=now + 15)
+        return value
+
+
+@app.get("/api/system/status")
+def system_status(refresh: bool = False, user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    return system_status_value(db, refresh)
+
+
+@app.get("/api/system/preferences")
+def system_preferences(user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
+    return preference_value(db, "general", {"language": "it", "theme": "system", "refresh_seconds": 5, "compact_numbers": False})
+
+
 @app.get("/api/system/overview")
 def system_overview(user: User = Depends(require_roles("platform_admin", "technician", "customer_admin")), db: Session = Depends(get_db)) -> dict:
-    interfaces = network_interfaces()
-    profiles = {item.key.removeprefix("network.interface."): item.value for item in db.scalars(select(SystemPreference).where(SystemPreference.key.like("network.interface.%")))}
-    for interface in interfaces:
-        interface["configured"] = profiles.get(interface["name"])
-    capacity = storage_capacity(settings)
-    capacity.update({"total_gb": round(capacity["total_bytes"] / 1024**3, 1), "used_gb": round(capacity["used_bytes"] / 1024**3, 1), "free_gb": round(capacity["free_bytes"] / 1024**3, 1)})
-    return {
-        "runtime": runtime_summary(), "release": settings.release, "environment": settings.environment,
-        "database": database_integrity(settings), "storage": capacity,
-        "interfaces": interfaces, "serial_ports": serial_ports(),
-        "network_management": {"apply_enabled": settings.network_management_enabled, "profiles_saved": len(profiles)},
-        "preferences": preference_value(db, "general", {"language": "it", "theme": "system", "refresh_seconds": 5, "compact_numbers": False}),
-    }
+    return {**system_status_value(db), "preferences": preference_value(db, "general", {"language": "it", "theme": "system", "refresh_seconds": 5, "compact_numbers": False})}
 
 
 @app.put("/api/system/preferences")
@@ -325,6 +359,7 @@ def update_network_profile(interface_name: str, data: NetworkProfileInput, user:
     save_preference(db, f"network.interface.{interface_name}", value)
     db.add(AuditEvent(actor=user.username, action="network.profile.update", target_type="network_interface", target_id=interface_name, details={"mode": data.mode, "address": data.address, "pending_apply": True}))
     db.commit()
+    _system_status_cache["expires_at"] = 0.0
     return {"interface": interface_name, "profile": value, "apply_enabled": settings.network_management_enabled, "message": "Profilo salvato. L'applicazione richiede il servizio host Edge."}
 
 
