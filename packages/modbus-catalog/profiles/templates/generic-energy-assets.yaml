@@ -11,6 +11,7 @@ profiles:
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
     driver: {implementation: standard_modbus, compatibility_group: simulator-pv-v2, register_map: energy-manager-simulator-pv-v2, template: true}
+    validation: {level: simulated, verified_at: '2026-08-06', verified_by: Energy Manager Digital Twin Lab, evidence: [simulator-register-coverage, ecosystem-energy-balance]}
     capabilities: {energy_role: producer, dashboard: photovoltaic, writable: false, strings: 2, phases: 3}
     points:
       - {key: pv.voltage.dc, label: Tensione DC totale, function_code: 3, address: 0, register_count: 2, data_type: float32, unit: V, polling_group: fast, group: Lato DC}
@@ -55,6 +56,7 @@ profiles:
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
     driver: {implementation: standard_modbus, compatibility_group: simulator-storage-v2, register_map: energy-manager-simulator-storage-v2, template: true}
+    validation: {level: simulated, verified_at: '2026-08-06', verified_by: Energy Manager Digital Twin Lab, evidence: [simulator-register-coverage, ecosystem-energy-balance]}
     capabilities: {energy_role: bidirectional, dashboard: storage, writable: false}
     points:
       - {key: storage.soc, label: Stato di carica, function_code: 3, address: 100, register_count: 2, data_type: float32, unit: '%', polling_group: fast, group: Batteria}
@@ -97,6 +99,7 @@ profiles:
     address_base: 0
     defaults: {polling_interval_seconds: 5, unit_id: 1}
     driver: {implementation: standard_modbus, compatibility_group: simulator-ev-v2, register_map: energy-manager-simulator-ev-v2, template: true}
+    validation: {level: simulated, verified_at: '2026-08-06', verified_by: Energy Manager Digital Twin Lab, evidence: [simulator-register-coverage, ecosystem-energy-balance]}
     capabilities: {energy_role: consumer, dashboard: ev_charging, writable: false, phases: 3, connectors: 1}
     points:
       - {key: ev.power.active, label: Potenza di ricarica, function_code: 3, address: 200, register_count: 2, data_type: float32, unit: kW, polling_group: fast, group: Sessione}
@@ -136,6 +139,7 @@ profiles:
     address_base: 0
     defaults: {polling_interval_seconds: 10, unit_id: 1}
     driver: {implementation: standard_modbus, compatibility_group: simulator-weather-v2, register_map: energy-manager-simulator-weather-v2, template: true}
+    validation: {level: simulated, verified_at: '2026-08-06', verified_by: Energy Manager Digital Twin Lab, evidence: [simulator-register-coverage, ecosystem-energy-balance]}
     capabilities: {energy_role: context, dashboard: environment, writable: false}
     points:
       - {key: environment.irradiance.poa, label: Irraggiamento sul piano, function_code: 3, address: 300, register_count: 2, data_type: float32, unit: W/m², polling_group: fast, group: Irraggiamento}

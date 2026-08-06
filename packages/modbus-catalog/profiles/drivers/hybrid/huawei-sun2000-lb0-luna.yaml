@@ -12,6 +12,7 @@ driver:
   implementation: standard_modbus
   compatibility_group: huawei-sun2000-lb0-luna
   register_map: sun2000lb-v300r024c00
+validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [Huawei SUN2000LB V300R024C00 Issue 04], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
 capabilities:
   energy_role: hybrid
   dashboard: photovoltaic

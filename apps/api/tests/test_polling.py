@@ -2,7 +2,7 @@ import pytest
 
 from energy_manager.models import Connection, Device
 import energy_manager.polling as polling
-from energy_manager.polling import _client_key, _effective_config, _read_with_session_recovery, build_read_blocks, sample_quality
+from energy_manager.polling import _client_key, _effective_config, _read_with_session_recovery, build_read_blocks, flag_implausibly_uniform_registers, sample_quality
 
 def test_groups_contiguous_registers():
     points=[{"key":"a","function_code":3,"address":100,"register_count":2},{"key":"b","function_code":3,"address":102,"register_count":2},{"key":"c","function_code":4,"address":102,"register_count":1}]
@@ -18,6 +18,17 @@ def test_rejects_obvious_register_map_decode_errors():
     assert sample_quality("electrical.active_power.total", float("nan"))[0] == "bad"
     assert sample_quality("storage.soc", 101)[0] == "bad"
     assert sample_quality("environment.irradiance.poa", 850)[0] == "good"
+
+
+def test_flags_implausibly_identical_unrelated_registers():
+    samples = [{"key": f"electrical.measurement.{index}", "value": 42.0, "quality": "good"} for index in range(12)]
+    assert flag_implausibly_uniform_registers(samples) is True
+    assert {item["quality_reason"] for item in samples} == {"implausible_identical_registers"}
+
+
+def test_does_not_flag_legitimate_repeated_zeroes_in_small_cohort():
+    samples = [{"key": f"measurement.{index}", "value": 0.0 if index < 5 else float(index), "quality": "good"} for index in range(12)]
+    assert flag_implausibly_uniform_registers(samples) is False
 
 
 def test_direct_tcp_uses_device_endpoint_and_independent_session():

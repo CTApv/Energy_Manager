@@ -17,6 +17,7 @@ import {
   Database,
   Factory,
   FileClock,
+  FlaskConical,
   Gauge,
   History,
   LayoutDashboard,
@@ -60,6 +61,7 @@ import { EnergyContextRail } from "./energy-context-rail";
 import { applyTheme, initializeTheme } from "./theme";
 import { ControlRoomStudio } from "./control-room-studio";
 import { EnergyPlanning } from "./energy-planning";
+import { DigitalTwinLab } from "./digital-twin-lab";
 
 initializeTheme();
 
@@ -90,6 +92,8 @@ const edgeNav = [
   ["users", "Utenti e ruoli", Users],
   ["tailscale", "Accesso remoto", Wifi],
   ["commissioning", "Verifica commissioning", Wrench],
+  ["__laboratory", "LABORATORIO", null],
+  ["digital-twin", "Digital Twin Lab", FlaskConical],
 ] as const;
 const controlNav = [
   ["dashboard", "Dashboard generale", LayoutDashboard],
@@ -123,6 +127,7 @@ const pageRoles: Record<string, UserRole[]> = {
   communications: ["platform_admin", "technician"],
   catalog: ["platform_admin", "technician"],
   commissioning: ["platform_admin", "technician"],
+  "digital-twin": ["platform_admin", "technician"],
   compliance: ["platform_admin", "technician", "customer_admin"],
   sync: ["platform_admin", "technician", "customer_admin"],
   settings: ["platform_admin", "technician", "customer_admin"],
@@ -139,6 +144,7 @@ const pageRoles: Record<string, UserRole[]> = {
   __configuration: ["platform_admin", "technician"],
   __governance: ["platform_admin", "technician", "customer_admin"],
   __system: ["platform_admin", "technician", "customer_admin"],
+  __laboratory: ["platform_admin", "technician"],
 };
 const roleLabels: Record<string, string> = {
   platform_admin: "Amministratore piattaforma",
@@ -523,6 +529,8 @@ function DataPage({
     ].includes(role);
   if (mode === "edge" && page === "commissioning")
     return <CommissioningCenter token={token} />;
+  if (mode === "edge" && page === "digital-twin")
+    return <DigitalTwinLab token={token} />;
   if (page === "plant") return <Plant token={token} onNavigate={onNavigate} />;
   if (mode === "edge" && page === "communications")
     return <CommunicationsCenter token={token} />;
@@ -734,6 +742,14 @@ function Catalog({ token }: { token: string }) {
     })[value] || value;
   const protocolLabel = (value: string) =>
     value === "modbus_tcp" ? "Modbus TCP" : "Modbus RTU";
+  const validationLabel = (value: string) =>
+    ({
+      unverified: "Da verificare",
+      simulated: "Validato in simulazione",
+      manual_reviewed: "Mappa revisionata",
+      hardware_tested: "Testato su hardware",
+      field_validated: "Validato sul campo",
+    })[value] || "Da verificare";
   return (
     <>
       <Header
@@ -759,6 +775,9 @@ function Catalog({ token }: { token: string }) {
               <Database />
             </div>
             <Status value="valid" />
+            <span className={`driver-validation validation-${p.validation?.level || "unverified"}`}>
+              {validationLabel(p.validation?.level)}
+            </span>
             <h3>
               {p.manufacturer} · {p.model}
             </h3>

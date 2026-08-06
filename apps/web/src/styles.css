@@ -39,8 +39,10 @@ html[data-theme="dark"] :is(.flow-stage,.intelligence-card header,.asset-group h
 .catalog-card>p:not(.catalog-category){min-height:3.8em;line-height:1.55}
 .catalog-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
 .catalog-tags span{border:1px solid #cfe2da;border-radius:999px;background:#eff8f4;color:#285f4d;padding:5px 8px;font-size:9px;font-weight:800;letter-spacing:.02em}
+.driver-validation{display:inline-flex;margin-top:14px;border-radius:999px;padding:6px 9px;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#f0f3f2;color:#61706b}.driver-validation.validation-simulated{background:#e8f3ff;color:#2471a8}.driver-validation.validation-manual_reviewed{background:#fff4d9;color:#8b6310}.driver-validation.validation-hardware_tested{background:#e7f8f1;color:#137b59}.driver-validation.validation-field_validated{background:#dff9ea;color:#087544;box-shadow:0 0 0 1px #3fd39755}
 html[data-theme="dark"] .catalog-category{color:#61e5b4!important}
 html[data-theme="dark"] .catalog-tags span{border-color:#356151;background:#17362c;color:#bcebd9}
+html[data-theme="dark"] .driver-validation{filter:saturate(.9) brightness(.9);color:#e8f5f0}
 
 /* Remaining administrative surfaces participate in the selected experience. */
 html[data-theme="dark"] :is(.monitor-modal form,.network-editor,.discovery-shell,.user-admin,.settings-card,.communication-card,.modal-card){border-color:#29433a!important;background:#10221d!important;color:#eaf5f0!important;box-shadow:0 10px 30px #0003!important}

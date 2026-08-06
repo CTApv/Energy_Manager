@@ -18,7 +18,7 @@ templates/
 
 ## Banco simulatori multi-dispositivo
 
-La demo Docker avvia cinque slave indipendenti, tutti con Unit ID `1` salvo il multimetro che mantiene anche gli ID `1–4` per le prove di gerarchia:
+La demo Docker avvia cinque slave indipendenti, tutti con Unit ID `1` salvo il multimetro che espone gli ID `1–150`: i primi quattro servono alle prove di gerarchia, gli altri ai test di carico.
 
 | Categoria | Host dalla rete Docker | Porta dall’host | Profilo catalogo | Misure |
 |---|---|---:|---|---:|
@@ -28,7 +28,7 @@ La demo Docker avvia cinque slave indipendenti, tutti con Unit ID `1` salvo il m
 | Colonnina EV | `simulator-ev:5020` | `5023` | `generic-ev-charger-v1` | 25 |
 | Stazione meteo | `simulator-weather:5020` | `5024` | `generic-solar-sensor-v1` | 22 |
 
-Ogni slave genera valori deterministici, coerenti con tipo, scala e unità del proprio profilo. L’endpoint HTTP di controllo usa le porte `18090–18094` e permette di attivare `anomaly` per verificare stati degradati e allarmi. Questi template servono esclusivamente per test e commissioning da banco.
+Ogni slave genera valori deterministici, coerenti con tipo, scala e unità del proprio profilo. Gli endpoint HTTP sulle porte `18090–18094` condividono scenari, orologio accelerato e fault controllati dal Digital Twin Lab. Questi template servono esclusivamente per test e commissioning da banco.
 
 ## Regola di separazione
 
@@ -49,9 +49,29 @@ driver:
   implementation: standard_modbus
   compatibility_group: vendor-family-firmware
   register_map: vendor-map-revision
+validation:
+  level: manual_reviewed
+  verified_at: '2026-08-05'
+  verified_by: Nome verificatore
+  evidence: [Manuale produttore e revisione]
+  notes: Collaudo hardware ancora da eseguire.
 ```
 
 Il runtime aggiunge automaticamente `driver.source_file`. Due file non possono dichiarare lo stesso ID: il caricamento fallisce prima dell'avvio del polling. `templates/` contiene esempi generici e non deve essere usato su un cliente senza validazione della mappa reale.
+
+## Livelli di validazione
+
+Il livello descrive l'evidenza disponibile e non è una certificazione normativa del prodotto:
+
+| Livello | Significato |
+|---|---|
+| `unverified` | Profilo importato senza evidenze sufficienti |
+| `simulated` | Mappa coperta dal simulatore e dai test automatici |
+| `manual_reviewed` | Registri confrontati con manuale e revisione dichiarati |
+| `hardware_tested` | Eseguito un banco prova su modello e firmware identificati |
+| `field_validated` | Confronto documentato sul campo con strumento/portale di riferimento |
+
+`hardware_tested` e `field_validated` richiedono data ed evidenze. Un template simulato non può dichiarare livelli hardware o campo. La UI mostra sempre questo stato nel catalogo.
 
 ## Inserimento di un nuovo modello
 

@@ -12,6 +12,7 @@ driver:
   implementation: standard_modbus
   compatibility_group: schneider-acti9-iem3000-modbus
   register_map: acti9-iem3000
+validation: {level: manual_reviewed, verified_at: '2026-08-05', verified_by: Filippo Lolli, evidence: [Schneider DOCA0005EN-15], notes: Collaudo hardware e validazione sul campo ancora da eseguire.}
 capabilities:
   energy_role: bidirectional_meter
   dashboard: electrical_meter

@@ -2,6 +2,15 @@
 
 Le fondamenta P0–P5 sono implementate. Questa roadmap distingue ciò che è ancora necessario per una piattaforma commerciale su larga scala.
 
+## Completato in 0.9.1 — laboratorio senza hardware
+
+- Digital Twin multi-categoria con bilancio energetico e tempo accelerato;
+- scenari riproducibili e fault injection reversibile;
+- stress test Modbus fino a 150 Unit ID con sessione condivisa o pool limitato;
+- smoke test API end-to-end e checklist persistente;
+- livelli di evidenza driver separati tra simulazione, revisione manuale, hardware e campo;
+- rilevamento automatico di registri implausibilmente identici.
+
 ## P0 futuro — sicurezza prodotto
 
 - credenziali individuali per Edge con rotazione e revoca senza token globale;

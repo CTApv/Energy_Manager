@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     mode: str = "edge"
     environment: str = "development"
-    release: str = "0.9.0"
+    release: str = "0.9.1"
     secret_key: str = "development-only-secret-key-change-me"
     edge_database_url: str = "sqlite:///./data/edge.db"
     control_database_url: str = "sqlite:///./data/control-room.db"
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     backup_retention_count: int = 14
     backup_directory: str = "./data/backups"
     network_management_enabled: bool = False
+    digital_twin_enabled: bool = False
+    digital_twin_control_urls: str = "meter=http://simulator:18090,pv=http://simulator-pv:18090,storage=http://simulator-storage:18090,ev=http://simulator-ev:18090,weather=http://simulator-weather:18090"
+    digital_twin_modbus_host: str = "simulator"
+    digital_twin_modbus_port: int = 5020
 
     @field_validator("mode")
     @classmethod
@@ -98,6 +102,8 @@ class Settings(BaseSettings):
             invalid.append("EM_SEED_DEMO")
         if self.mode == "edge" and self.sync_enabled and self.edge_id == "00000000-0000-4000-8000-000000000001":
             invalid.append("EM_EDGE_ID")
+        if self.digital_twin_enabled:
+            invalid.append("EM_DIGITAL_TWIN_ENABLED")
         if invalid:
             raise ValueError(f"Unsafe production configuration: {', '.join(invalid)}")
         return self
@@ -113,6 +119,15 @@ class Settings(BaseSettings):
     def ensure_sqlite_directory(self) -> None:
         if self.database_url.startswith("sqlite:///"):
             Path(self.database_url.removeprefix("sqlite:///" )).parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def digital_twin_urls(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for item in self.digital_twin_control_urls.split(","):
+            key, separator, value = item.strip().partition("=")
+            if separator and key and value:
+                result[key] = value.rstrip("/")
+        return result
 
 
 @lru_cache
